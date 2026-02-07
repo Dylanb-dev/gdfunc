@@ -1,0 +1,139 @@
+cabal-version:      3.0
+name:               GDFunc
+version:            0.1.0.0
+synopsis:           Elm-like language with linear types for Godot VM
+description:        
+    A functional programming language inspired by Elm that uses linear types
+    for resource management and safety. Includes scanner, parser, type checker,
+    and interpreter.
+homepage:           https://github.com/yourusername/GDFunc
+bug-reports:        https://github.com/yourusername/GDFunc/issues
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Your Name
+maintainer:         your.email@example.com
+copyright:          2024 Your Name
+category:           Language
+extra-source-files: 
+    README.md
+    CHANGELOG.md
+    examples/*.gdfunc
+    test/fixtures/*.gdfunc
+
+common common-options
+    default-language: GHC2024
+    ghc-options:
+        -Wall
+        -Wcompat
+        -Widentities
+        -Wincomplete-uni-patterns
+        -Wincomplete-record-updates
+        -Wredundant-constraints
+        -Wnoncanonical-monad-instances
+        -Wmissing-export-lists
+        -Wpartial-fields
+        -Wmissing-deriving-strategies
+        -Wunused-packages
+        -fhide-source-paths
+        -freverse-errors
+        -fprint-expanded-synonyms
+        -fprint-explicit-foralls
+        -fprint-explicit-kinds
+    
+    default-extensions:
+        LambdaCase
+        OverloadedStrings
+        RecordWildCards
+        TupleSections
+        ViewPatterns
+        LinearTypes
+        QualifiedDo
+    
+    build-depends:
+        base
+
+library
+    import:           common-options
+    hs-source-dirs:   src
+    exposed-modules:
+        GDFunc.Scanner
+        GDFunc.Parser
+        GDFunc.Pretty
+        GDFunc.TypeChecker
+
+    -- Future modules:
+    -- GDFunc.Interpreter
+    -- GDFunc.CodeGen
+    
+    build-depends:
+        mtl >=2.2 && <3,
+        transformers >=0.5 && <0.7,
+        text >=1.2 && <3,
+        containers >=0.6 && <0.8,
+        array >=0.5 && <0.6,
+        linear-base >=0.6 && <0.7
+
+
+executable GDFunc
+    import:           common-options
+    hs-source-dirs:   app
+    main-is:          Main.hs
+    other-modules:
+        -- Repl
+    
+    build-depends:
+        GDFunc,
+        mtl,
+        transformers,
+        text,
+        haskeline >=0.8 && <0.9,
+        filepath >=1.4 && <1.6,
+        directory >=1.3 && <1.4,
+        linear-base >=0.6 && <0.7
+
+
+    ghc-options:
+        -threaded
+        -rtsopts
+        -with-rtsopts=-N
+
+test-suite GDFunc-test
+    import:           common-options
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Spec.hs
+    other-modules:
+        GDFunc.ScannerSpec
+        GDFunc.ParserSpec
+        GDFunc.PrettySpec
+    build-tool-depends: hspec-discover:hspec-discover
+    build-depends:
+        GDFunc,
+        mtl,
+        transformers,
+        text,
+        hspec >=2.7 && <3,
+        QuickCheck >=2.14 && <3,
+        hspec-discover >=2.7 && <3,
+        linear-base >=0.6 && <0.7
+
+    ghc-options:
+        -threaded
+        -rtsopts
+        -with-rtsopts=-N
+
+benchmark GDFunc-bench
+    import:           common-options
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   bench
+    main-is:          Main.hs
+    
+    build-depends:
+        GDFunc,
+        criterion >=1.5 && <2,
+        deepseq >=1.4 && <2
+
+    ghc-options:
+        -threaded
+        -rtsopts
+        -with-rtsopts=-N
