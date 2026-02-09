@@ -84,3 +84,103 @@ spec = do
                 result `shouldSatisfy` \case
                     Right [Token CASE _ _, Token CASE_LINEAR _ _, Token EOF _ _] -> True
                     _ -> False
+
+        describe "Example Files" $ do
+            it "scans factorial.gdfunc" $ do
+                let source = unlines
+                        [ "module Factorial exposing (main)"
+                        , ""
+                        , "factorial : Int -> Int"
+                        , "factorial n ="
+                        , "    if n <= 1 then"
+                        , "        1"
+                        , "    else"
+                        , "        n * factorial (n - 1)"
+                        , ""
+                        , "main : Int"
+                        , "main = factorial 5"
+                        ]
+                let result = scanTokens source
+                result `shouldSatisfy` \case
+                    Right tokens -> length tokens > 30  -- Should have many tokens
+                    Left _ -> False
+
+            it "scans borrowing_example.gdfunc" $ do
+                let source = unlines
+                        [ "module BorrowingExample exposing (main)"
+                        , ""
+                        , "length : &List a -> Int"
+                        , "length list ="
+                        , "    case list of"
+                        , "        [] -> 0"
+                        , "        _ :: rest -> 1 + length &rest"
+                        , ""
+                        , "main : Int"
+                        , "main ="
+                        , "    let numbers = [1, 2, 3]"
+                        , "        len = length &numbers"
+                        , "        total = sum numbers"
+                        , "    in len + total"
+                        ]
+                let result = scanTokens source
+                result `shouldSatisfy` \case
+                    Right tokens -> length tokens > 40  -- Should have many tokens
+                    Left _ -> False
+
+            it "scans shared_types.gdfunc" $ do
+                let source = unlines
+                        [ "module SharedTypesExample exposing (main)"
+                        , ""
+                        , "type shared Config = Config"
+                        , "    { host : String"
+                        , "    , port : Int"
+                        , "    }"
+                        , ""
+                        , "type shared Point = Point Float Float"
+                        ]
+                let result = scanTokens source
+                result `shouldSatisfy` \case
+                    Right tokens ->
+                        -- Check for presence of SHARED keyword
+                        any (\t -> case tokenType t of
+                            SHARED -> True
+                            _ -> False) tokens
+                    Left _ -> False
+
+            it "scans linear_default.gdfunc" $ do
+                let source = unlines
+                        [ "module LinearDefaultExample exposing (main)"
+                        , ""
+                        , "type Stack a = Stack (List a)"
+                        , ""
+                        , "isEmpty : &Stack a -> Bool"
+                        , "isEmpty stack ="
+                        , "    case stack of"
+                        , "        Stack [] -> True"
+                        , "        Stack _ -> False"
+                        ]
+                let result = scanTokens source
+                result `shouldSatisfy` \case
+                    Right tokens ->
+                        -- Check for presence of AMPERSAND for borrowing
+                        any (\t -> case tokenType t of
+                            AMPERSAND -> True
+                            _ -> False) tokens
+                    Left _ -> False
+
+            it "scans quicksort_linear.gdfunc" $ do
+                let source = unlines
+                        [ "module LinearQuicksort exposing (quicksort)"
+                        , ""
+                        , "quicksort : List Int -> List Int"
+                        , "quicksort list ="
+                        , "    case list of"
+                        , "        [] -> []"
+                        , "        pivot :: rest ->"
+                        , "            let (smaller, larger) = partition pivot rest"
+                        , "            in concat3 (quicksort smaller) pivot (quicksort larger)"
+                        ]
+                let result = scanTokens source
+                result `shouldSatisfy` \case
+                    Right tokens -> length tokens > 35  -- Should have many tokens
+                    Left _ -> False

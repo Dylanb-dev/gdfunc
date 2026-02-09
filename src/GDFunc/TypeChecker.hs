@@ -25,8 +25,6 @@ import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
-import qualified Prelude.Linear as Linear
-import qualified Data.Functor.Linear as Data
 import Prelude
 
 -- Use linear types to represent resources that must be consumed exactly once

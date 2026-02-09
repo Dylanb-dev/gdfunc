@@ -5,17 +5,13 @@ module GDFunc.WebServer
     ( runWebServer
     , ServerConfig(..)
     , defaultConfig
-    , CompileRequest(..)
-    , CompileResponse(..)
-    , RunResponse(..)
-    , ExampleFile(..)
-    , ExampleContent(..)
+    , CompileRequest(..)      
+    , CompileResponse(..)     
+    , RunResponse(..)         
     , compileEndpoint
     , compileGDFunc
-    , compileAndRun
-    , runEndpoint
-    , listExamplesEndpoint
-    , getExampleEndpoint
+    , compileAndRun        
+    , runEndpoint             
     ) where
 
 import Web.Scotty

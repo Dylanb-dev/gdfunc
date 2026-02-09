@@ -194,6 +194,26 @@ identifier = do
         IDENTIFIER name -> return name
         _ -> throwError $ ParseError "Expected identifier" (position tok)
 
+-- Parse an uppercase identifier (constructor)
+upperIdentifier :: Parser String
+upperIdentifier = do
+    tok <- satisfy $ \case
+        IDENTIFIER (c:_) -> isUpper c
+        _ -> False
+    case tokenType tok of
+        IDENTIFIER name -> return name
+        _ -> throwError $ ParseError "Expected uppercase identifier" (position tok)
+
+-- Parse a lowercase identifier (variable)
+lowerIdentifier :: Parser String
+lowerIdentifier = do
+    tok <- satisfy $ \case
+        IDENTIFIER (c:_) -> isLower c
+        _ -> False
+    case tokenType tok of
+        IDENTIFIER name -> return name
+        _ -> throwError $ ParseError "Expected lowercase identifier" (position tok)
+
 linearIdentifier :: Parser String
 linearIdentifier = do
     tok <- satisfy $ \case
@@ -787,10 +807,10 @@ patternAtom :: Parser Pattern
 patternAtom = borrowPattern
     <|> wildcardPattern
     <|> literalPattern
+    <|> try constructorPattern  -- Try constructor before variable (both use identifiers)
     <|> variablePattern
     <|> listPattern
     <|> tuplePattern
-    <|> constructorPattern
     <|> parensPattern
 
 borrowPattern :: Parser Pattern
@@ -825,14 +845,8 @@ literalPattern = do
 
 variablePattern :: Parser Pattern
 variablePattern = do
-    tok <- peek
-    case tok of
-        Just t -> case tokenType t of
-            IDENTIFIER name -> do
-                token (IDENTIFIER name)
-                return $ PVar name
-            _ -> throwError $ ParseError "Expected variable pattern" (position t)
-        Nothing -> throwError $ ParseError "Unexpected end" (Position 0 0)
+    name <- lowerIdentifier  -- Only match lowercase identifiers (variables)
+    return $ PVar name
 
 listPattern :: Parser Pattern
 listPattern = do
@@ -864,7 +878,7 @@ tuplePattern = do
 
 constructorPattern :: Parser Pattern
 constructorPattern = do
-    name <- identifier
+    name <- upperIdentifier  -- Only match uppercase identifiers (constructors)
     args <- many patternAtom
     return $ PCtor name args
 

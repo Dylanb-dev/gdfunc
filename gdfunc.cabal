@@ -61,27 +61,17 @@ library
         GDFunc.Pretty
         GDFunc.TypeChecker
         GDFunc.CodeGen
-        GDFunc.WebServer
 
     -- Future modules:
     -- GDFunc.Interpreter
-    
+
     build-depends:
         mtl >=2.2 && <3,
         transformers >=0.5 && <0.7,
         text >=1.2 && <3,
         containers >=0.6 && <0.8,
         array >=0.5 && <0.6,
-        linear-base >=0.6 && <0.7,
-        scotty >=0.20 && <0.23,
-        wai-extra >=3.1 && <4,
-        wai-middleware-static >=0.9 && <1,
-        aeson >=1.5 && <3,
-        bytestring,
-        process,
-        temporary,
-        filepath,
-        directory        
+        linear-base >=0.6 && <0.7       
 
 executable GDFunc
     import:           common-options
@@ -116,6 +106,7 @@ test-suite GDFunc-test
         GDFunc.ParserSpec
         GDFunc.PrettySpec
         GDFunc.TypeCheckerSpec
+        
     build-tool-depends: hspec-discover:hspec-discover
     build-depends:
         GDFunc,
@@ -124,7 +115,8 @@ test-suite GDFunc-test
         text,
         hspec >=2.7 && <3,
         QuickCheck >=2.14 && <3,
-        hspec-discover >=2.7 && <3
+        hspec-discover >=2.7 && <3,
+
 
     ghc-options:
         -threaded
@@ -133,8 +125,10 @@ test-suite GDFunc-test
 
 executable gdfunc-web
     import:           common-options
-    hs-source-dirs:   app
+    hs-source-dirs:   app src
     main-is:          WebServer.hs
+    other-modules:
+        GDFunc.WebServer
 
     build-depends:
         GDFunc,

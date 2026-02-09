@@ -22,4 +22,4 @@ fi
 
 # Build and run the web server
 # Note: May require --allow-newer for some dependencies with newer GHC versions
-cabal run gdfunc-web --allow-newer
+cabal run gdfunc-web
