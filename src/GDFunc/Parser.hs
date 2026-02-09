@@ -43,12 +43,15 @@ data Declaration
     = TypeAnnotation String Type
     | FunctionDecl String [Pattern] Expr
     | TypeDecl String [String] [(String, [Type])]  -- type Name vars = Constructor types | ...
+    | SharedTypeDecl String [String] [(String, [Type])]  -- type shared Name vars = ...
     | TypeAlias String [String] Type
+    | SharedTypeAlias String [String] Type  -- type shared alias Name = ...
     deriving (Show, Eq)
 
 data Type
     = TVar String              -- a, b, comparable
-    | TLinear Type             -- Type!
+    | TBorrowed Type           -- &Type (borrowed/non-consuming)
+    | TShared Type             -- shared Type (can be freely copied)
     | TCon String [Type]       -- List a, Maybe Int
     | TArrow Type Type         -- a -> b
     | TLinearArrow Type Type   -- a -o b
@@ -58,7 +61,7 @@ data Type
 
 data Expr
     = EVar String              -- variable reference
-    | ELinearVar String        -- variable! reference
+    | EBorrow Expr             -- &expr (borrow expression)
     | EInt Int
     | EFloat Double
     | EChar Char
@@ -79,7 +82,7 @@ data Expr
 
 data Pattern
     = PVar String              -- x
-    | PLinearVar String        -- x!
+    | PBorrow Pattern          -- &pattern (borrowed pattern)
     | PWildcard                -- _
     | PInt Int
     | PFloat Double
@@ -130,7 +133,19 @@ parseModule toks = evalState (runExceptT moduleParser) initialState
         { tokens = filter (not . isSkippable) toks
         , currentPos = 0
         }
-    isSkippable tok = tokenType tok `elem` [NEWLINE, COMMENT ""]
+    -- Only skip comments, keep newlines!
+    isSkippable tok = case tokenType tok of
+        COMMENT _ -> True
+        _ -> False
+
+skipNewlines :: Parser ()
+skipNewlines = do
+    tok <- peek
+    case tok of
+        Just t | tokenType t == NEWLINE -> do
+            token NEWLINE
+            skipNewlines
+        _ -> return ()
 
 parseExpr :: [Token] -> Either ParseError Expr
 parseExpr toks = evalState (runExceptT expression) initialState
@@ -216,13 +231,20 @@ consume expected msg = do
 
 moduleParser :: Parser Module
 moduleParser = do
+    skipNewlines
     token MODULE
     name <- modulePath
     exp <- optional exposingClause
+    skipNewlines 
     imports <- many importDecl
-    decls <- many declaration
+    skipNewlines
+    decls <- manyDecls
     token EOF
     return $ Module name exp imports decls
+
+-- Parse declarations until EOF
+manyDecls :: Parser [Declaration]
+manyDecls = many (skipNewlines *> declaration <* skipNewlines)
 
 modulePath :: Parser [String]
 modulePath = do
@@ -261,10 +283,11 @@ importDecl = do
 -- Declaration Parser
 
 declaration :: Parser Declaration
-declaration = typeDeclaration
-    <|> typeAliasDeclaration
-    <|> try functionAnnotation
-    <|> functionDeclaration
+declaration = try sharedTypeAliasDeclaration
+    <|> try typeAliasDeclaration
+    <|> try sharedTypeDeclaration
+    <|> typeDeclaration
+    <|> annotationOrFunction
 
 typeDeclaration :: Parser Declaration
 typeDeclaration = do
@@ -275,11 +298,21 @@ typeDeclaration = do
     constructors <- constructorList
     return $ TypeDecl name typeVars constructors
 
+sharedTypeDeclaration :: Parser Declaration
+sharedTypeDeclaration = do
+    token TYPE
+    token SHARED
+    name <- identifier
+    typeVars <- many identifier
+    token EQUALS
+    constructors <- constructorList
+    return $ SharedTypeDecl name typeVars constructors
+
 constructorList :: Parser [(String, [Type])]
 constructorList = do
     first <- constructor
     rest <- many $ do
-        satisfy (\t -> t == PIPE || t == NEWLINE)  -- Allow | or newline
+        satisfy (\t -> t == PIPE || t == NEWLINE)
         constructor
     return (first : rest)
 
@@ -291,12 +324,24 @@ constructor = do
 
 typeAliasDeclaration :: Parser Declaration
 typeAliasDeclaration = do
+    token TYPE
     token ALIAS
     name <- identifier
     typeVars <- many identifier
     token EQUALS
     typ <- typeAnnotation
     return $ TypeAlias name typeVars typ
+
+sharedTypeAliasDeclaration :: Parser Declaration
+sharedTypeAliasDeclaration = do
+    token TYPE
+    token SHARED
+    token ALIAS
+    name <- identifier
+    typeVars <- many identifier
+    token EQUALS
+    typ <- typeAnnotation
+    return $ SharedTypeAlias name typeVars typ
 
 functionAnnotation :: Parser Declaration
 functionAnnotation = do
@@ -313,53 +358,71 @@ functionDeclaration = do
     body <- expression
     return $ FunctionDecl name patterns body
 
+annotationOrFunction :: Parser Declaration
+annotationOrFunction = do
+    name <- identifier
+    p <- peek
+    case fmap tokenType p of
+        -- Branch 1: It's a Type Annotation (factorial : Int -> Int)
+        Just COLON -> do
+            void $ token COLON
+            typ <- typeAnnotation
+            return $ TypeAnnotation name typ
+            
+        -- Branch 2: It's a Function Declaration (factorial n = ...)
+        _ -> do
+            patterns <- many pattern
+            void $ token EQUALS
+            body <- expression
+            return $ FunctionDecl name patterns body
+
 -- Type Parser
 
 typeAnnotation :: Parser Type
 typeAnnotation = typeArrow
 
+-- Handles 'a -> b' and 'a -o b' (Right Associative)
 typeArrow :: Parser Type
 typeArrow = do
     left <- typeApplication
-    rest <- optional $ do
-        arrowType <- (token ARROW >> return TArrow)
-            <|> (token LINEAR_ARROW >> return TLinearArrow)
-        right <- typeArrow
-        return (arrowType, right)
-    case rest of
-        Nothing -> return left
-        Just (constructor, right) -> return $ constructor left right
+    p <- peek
+    case fmap tokenType p of
+        Just ARROW -> do
+            void $ token ARROW
+            right <- typeArrow
+            return $ TArrow left right
+        Just LINEAR_ARROW -> do
+            void $ token LINEAR_ARROW
+            right <- typeArrow
+            return $ TLinearArrow left right
+        _ -> return left
 
+-- Handles 'List Int' or 'Maybe (List a)' or '&List Int' or 'shared List Int'
 typeApplication :: Parser Type
 typeApplication = do
-    types <- some typeAtom
-    
-    case types of
-        -- Single type, possibly with trailing !
-        [t] -> do
-            hasBang <- check BANG
-            when hasBang $ void (token BANG)
-            return $ if hasBang then TLinear t else t
-        
-        -- Linear type constructor followed by arguments: List! Int -> TLinear (List Int)
-        (TLinear (TCon name []) : args) ->
-            return $ TLinear (TCon name args)
-        
-        -- Regular type constructor with arguments: List Int
-        (TCon name [] : args) -> do
-            hasBang <- check BANG
-            when hasBang $ void (token BANG)
-            let appliedType = TCon name args
-            return $ if hasBang then TLinear appliedType else appliedType
-        
-        -- Type variable used as constructor: a b c
-        (TVar name : args) -> do
-            hasBang <- check BANG
-            when hasBang $ void (token BANG)
-            let appliedType = TCon name args
-            return $ if hasBang then TLinear appliedType else appliedType
-        
-        _ -> throwError $ ParseError "Invalid type application" (Position 0 0)
+    -- Check for & prefix (borrowed)
+    isBorrowed <- check AMPERSAND
+    if isBorrowed
+        then do
+            token AMPERSAND
+            innerType <- typeApplication
+            return (TBorrowed innerType)
+        else do
+            -- Check for shared prefix
+            isShared <- check SHARED
+            if isShared
+                then do
+                    token SHARED
+                    innerType <- typeApplication
+                    return (TShared innerType)
+                else do
+                    -- Normal type application
+                    atoms <- some typeAtom
+                    case atoms of
+                        [t] -> return t
+                        (TCon name [] : args) -> return (TCon name args)
+                        (TVar name : args) -> return (TCon name args)
+                        _ -> throwError $ ParseError "Invalid type application" (Position 0 0)
 
 typeAtom :: Parser Type
 typeAtom = typeVarOrCon
@@ -378,15 +441,7 @@ typeVarOrCon = do
                               then TCon name []
                               else TVar name
                 return baseType
-            
-            -- Handle LINEAR_IDENT for types like List! Int
-            LINEAR_IDENT name -> do
-                _ <- token (LINEAR_IDENT name)
-                let baseType = if isUpper (head name)
-                              then TCon name []
-                              else TVar name
-                return $ TLinear baseType
-            
+
             _ -> throwError $ ParseError "Expected type" (position t)
         Nothing -> throwError $ ParseError "Unexpected end" (Position 0 0)
 
@@ -529,22 +584,36 @@ lambdaExpression = do
     return $ ELambda patterns body
 
 binaryExpression :: Parser Expr
-binaryExpression = parseOperator <|> applicationExpression
+binaryExpression = do
+    left <- applicationExpression
+    maybeContinue left
   where
-    parseOperator = do
-        left <- applicationExpression
-        rest <- optional $ do
-            op <- operator
-            right <- binaryExpression
-            return (op, right)
-        case rest of
-            Nothing -> return left
-            Just (op, right) -> return $ EBinOp op left right
+    maybeContinue left = do
+        tok <- peek
+        case tok of
+            Just t | isOperatorToken (tokenType t) -> do
+                op <- operator
+                right <- applicationExpression
+                maybeContinue (EBinOp op left right)
+            _ -> return left
+
+isOperatorToken :: TokenType -> Bool
+isOperatorToken t = t `elem`
+    [ PLUS, MINUS, MULTIPLY, DIVIDE, EQUALS, LESS_EQUAL, GREATER_EQUAL
+    , LESS_THAN, GREATER_THAN, DOUBLE_EQUALS, NOT_EQUALS
+    , APPEND, CONS, PIPE, AND, OR
+    ]
 
 operator :: Parser String
 operator = do
-    tok <- satisfy isOperator
+    tok <- satisfy isOperatorToken
     return $ case tokenType tok of
+        PLUS -> "+"
+        MINUS -> "-"
+        MULTIPLY -> "*"
+        DIVIDE -> "/"
+        EQUALS -> "="
+        LESS_EQUAL -> "<="
         PLUS -> "+"
         MINUS -> "-"
         MULTIPLY -> "*"
@@ -564,22 +633,29 @@ operator = do
         AND -> "&&"
         OR -> "||"
         _ -> ""
-  where
-    isOperator t = t `elem`
-        [ PLUS, MINUS, MULTIPLY, DIVIDE, APPEND, CONS
-        , PIPE, COMPOSE_LEFT, COMPOSE_RIGHT, COMPOSE
-        , DOUBLE_EQUALS, NOT_EQUALS
-        , LESS_THAN, GREATER_THAN, LESS_EQUAL, GREATER_EQUAL
-        , AND, OR
-        ]
 
 applicationExpression :: Parser Expr
 applicationExpression = do
-    exprs <- some accessExpression
-    case exprs of
+    first <- accessExpression
+    rest <- many (try parseNextIfNotDecl)
+    case first : rest of
         [e] -> return e
         (f:args) -> return $ foldl EApp f args
         [] -> throwError $ ParseError "Empty application" (Position 0 0)
+  where
+    parseNextIfNotDecl = do
+        st <- get
+        let remaining = drop (currentPos st) (tokens st)
+        case remaining of
+            -- Stop if we see "name =" or "name :"
+            (t1:t2:_) | isIdentifierToken (tokenType t1) && 
+                        (tokenType t2 == EQUALS || tokenType t2 == COLON) ->
+                throwError $ ParseError "Declaration boundary" (position t1)
+            _ -> accessExpression
+        
+    isIdentifierToken (IDENTIFIER _) = True
+    isIdentifierToken (LINEAR_IDENT _) = True
+    isIdentifierToken _ = False
 
 accessExpression :: Parser Expr
 accessExpression = do
@@ -590,11 +666,18 @@ accessExpression = do
     return $ foldl EFieldAccess expr fields
 
 primaryExpression :: Parser Expr
-primaryExpression = literalExpression
+primaryExpression = borrowExpression
+    <|> literalExpression
     <|> variableExpression
     <|> listExpression
     <|> recordExpression
     <|> parensExpression
+
+borrowExpression :: Parser Expr
+borrowExpression = do
+    token AMPERSAND
+    expr <- primaryExpression
+    return $ EBorrow expr
 
 literalExpression :: Parser Expr
 literalExpression = do
@@ -618,9 +701,6 @@ variableExpression = do
     tok <- peek
     case tok of
         Just t -> case tokenType t of
-            LINEAR_IDENT name -> do
-                token (LINEAR_IDENT name)
-                return $ ELinearVar name
             IDENTIFIER name -> do
                 token (IDENTIFIER name)
                 return $ EVar name
@@ -704,13 +784,20 @@ consPattern = do
         Just right -> return $ PCons left right
 
 patternAtom :: Parser Pattern
-patternAtom = wildcardPattern
+patternAtom = borrowPattern
+    <|> wildcardPattern
     <|> literalPattern
     <|> variablePattern
     <|> listPattern
     <|> tuplePattern
     <|> constructorPattern
     <|> parensPattern
+
+borrowPattern :: Parser Pattern
+borrowPattern = do
+    token AMPERSAND
+    pat <- patternAtom
+    return $ PBorrow pat
 
 wildcardPattern :: Parser Pattern
 wildcardPattern = do
@@ -744,9 +831,6 @@ variablePattern = do
             IDENTIFIER name -> do
                 token (IDENTIFIER name)
                 return $ PVar name
-            LINEAR_IDENT name -> do
-                token (LINEAR_IDENT name)
-                return $ PLinearVar name
             _ -> throwError $ ParseError "Expected variable pattern" (position t)
         Nothing -> throwError $ ParseError "Unexpected end" (Position 0 0)
 

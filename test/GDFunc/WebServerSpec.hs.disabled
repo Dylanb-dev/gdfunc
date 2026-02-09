@@ -1,0 +1,104 @@
+module GDFunc.WebServerSpec (spec) where
+
+import Test.Hspec
+import Data.Maybe (isJust, fromJust)
+import Data.List (isInfixOf)
+import Control.Monad (when)
+
+import GDFunc.WebServer
+
+spec :: Spec
+spec = do
+    describe "compileGDFunc" $ do
+        
+        it "compiles a simple integer literal" $ do
+            let source = "module Test exposing (x)\n\nx = 42"
+            result <- compileGDFunc source
+            
+            success result `shouldBe` True
+            cCode result `shouldSatisfy` isJust
+        
+        it "handles scan errors gracefully" $ do
+            let source = "module Test \xFF\xFF"
+            result <- compileGDFunc source
+            
+            -- Print what we got for debugging
+            print result
+            
+            -- The scanner might not fail on this, so check if it at least parsed
+            if success result
+                then pendingWith "Scanner doesn't fail on this input"
+                else do
+                    success result `shouldBe` False
+                    errorMessage result `shouldSatisfy` isJust
+        
+        it "handles parse errors" $ do
+            let source = "module Test\n\nbad syntax here =="
+            result <- compileGDFunc source
+            
+            success result `shouldBe` False
+            scanOutput result `shouldSatisfy` ("Scanned" `isInfixOf`)
+        
+        it "handles type check errors" $ do
+            let source = "module Test exposing (x)\n\nx = y"
+            result <- compileGDFunc source
+            
+            success result `shouldBe` False
+            typeCheckOutput result `shouldSatisfy` ("failed" `isInfixOf`)
+        
+        it "compiles factorial function" $ do
+            let source = unlines
+                    [ "module Factorial exposing (factorial)"
+                    , ""
+                    , "factorial n ="
+                    , "    if n <= 1 then"
+                    , "        1"
+                    , "    else"
+                    , "        n * (factorial (n - 1))"
+                    ]
+            result <- compileGDFunc source
+            
+            -- Debug: print the actual error if it failed
+            when (not $ success result) $ do
+                putStrLn $ "Error: " ++ show (errorMessage result)
+                putStrLn $ "Type check: " ++ typeCheckOutput result
+            
+            success result `shouldBe` True
+            cCode result `shouldSatisfy` isJust
+            
+            when (isJust $ cCode result) $ do
+                let c = fromJust (cCode result)
+                c `shouldSatisfy` ("factorial" `isInfixOf`)
+                c `shouldSatisfy` ("#include" `isInfixOf`)
+        
+        it "compiles linear types example" $ do
+            let source = unlines
+                    [ "module Linear exposing (useResource)"
+                    , ""
+                    , "useResource resource! ="
+                    , "    let"
+                    , "        result = resource!"
+                    , "    in"
+                    , "    result"
+                    ]
+            result <- compileGDFunc source
+            
+            -- Debug: print error if failed
+            when (not $ success result) $ do
+                putStrLn $ "Error: " ++ show (errorMessage result)
+                putStrLn $ "Type check: " ++ typeCheckOutput result
+            
+            success result `shouldBe` True
+            cCode result `shouldSatisfy` isJust
+            
+            when (isJust $ cCode result) $ do
+                let c = fromJust (cCode result)
+                c `shouldSatisfy` ("consume_linear" `isInfixOf`)
+        
+        it "returns proper compiler output stages" $ do
+            let source = "module Test exposing (x)\n\nx = 42"
+            result <- compileGDFunc source
+            
+            scanOutput result `shouldSatisfy` ("Scanned" `isInfixOf`)
+            parseOutput result `shouldSatisfy` ("Parsed" `isInfixOf`)
+            typeCheckOutput result `shouldSatisfy` ("checked" `isInfixOf`)

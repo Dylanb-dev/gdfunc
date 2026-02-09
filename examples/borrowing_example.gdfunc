@@ -1,0 +1,26 @@
+module BorrowingExample exposing (main)
+
+-- Example demonstrating borrowing with the & operator
+-- The new spec: linear-by-default, use & to borrow
+
+-- Function that borrows a list (doesn't consume it)
+length : &List a -> Int
+length list =
+    case list of
+        [] -> 0
+        _ :: rest -> 1 + length &rest
+
+-- Function that consumes a list
+sum : List Int -> Int
+sum list =
+    case list of
+        [] -> 0
+        x :: xs -> x + sum xs
+
+-- Usage example showing borrowing
+main : Int
+main =
+    let numbers = [1, 2, 3, 4, 5]
+        len = length &numbers     -- borrow numbers (don't consume)
+        total = sum numbers       -- consume numbers
+    in len + total

@@ -46,14 +46,25 @@ prettyDeclaration (TypeDecl name vars ctors) =
   where
     prettyCtor (n, types) = n ++ " " ++ unwords (map prettyTypeAtom types)
 
+prettyDeclaration (SharedTypeDecl name vars ctors) =
+    "type shared " ++ name ++ " " ++ unwords vars ++ "\n" ++
+    indent ("= " ++ intercalate "\n| " (map prettyCtor ctors))
+  where
+    prettyCtor (n, types) = n ++ " " ++ unwords (map prettyTypeAtom types)
+
 prettyDeclaration (TypeAlias name vars typ) =
     "type alias " ++ name ++ " " ++ unwords vars ++ " =\n" ++
+    indent (prettyType typ)
+
+prettyDeclaration (SharedTypeAlias name vars typ) =
+    "type shared alias " ++ name ++ " " ++ unwords vars ++ " =\n" ++
     indent (prettyType typ)
 
 -- Pretty print a type
 prettyType :: Type -> String
 prettyType (TVar name) = name
-prettyType (TLinear typ) = prettyTypeAtom typ ++ "!"
+prettyType (TBorrowed typ) = "&" ++ prettyTypeAtom typ
+prettyType (TShared typ) = "shared " ++ prettyTypeAtom typ
 prettyType (TCon name []) = name
 prettyType (TCon name args) = name ++ " " ++ unwords (map prettyTypeAtom args)
 prettyType (TArrow left right) = prettyTypeAtom left ++ " -> " ++ prettyType right
@@ -76,7 +87,7 @@ prettyTypeAtom t = "(" ++ prettyType t ++ ")"
 -- Pretty print an expression
 prettyExpr :: Expr -> String
 prettyExpr (EVar name) = name
-prettyExpr (ELinearVar name) = name ++ "!"
+prettyExpr (EBorrow expr) = "&" ++ prettyExprAtom expr
 prettyExpr (EInt n) = show n
 prettyExpr (EFloat f) = show f
 prettyExpr (EChar c) = show c
@@ -132,7 +143,7 @@ prettyExpr (EParens expr) = "(" ++ prettyExpr expr ++ ")"
 
 prettyExprAtom :: Expr -> String
 prettyExprAtom e@(EVar _) = prettyExpr e
-prettyExprAtom e@(ELinearVar _) = prettyExpr e
+prettyExprAtom e@(EBorrow _) = prettyExpr e
 prettyExprAtom e@(EInt _) = prettyExpr e
 prettyExprAtom e@(EFloat _) = prettyExpr e
 prettyExprAtom e@(EChar _) = prettyExpr e
@@ -145,7 +156,7 @@ prettyExprAtom e = "(" ++ prettyExpr e ++ ")"
 -- Pretty print a pattern
 prettyPattern :: Pattern -> String
 prettyPattern (PVar name) = name
-prettyPattern (PLinearVar name) = name ++ "!"
+prettyPattern (PBorrow pattern) = "&" ++ prettyPatternAtom pattern
 prettyPattern PWildcard = "_"
 prettyPattern (PInt n) = show n
 prettyPattern (PFloat f) = show f
@@ -162,7 +173,7 @@ prettyPattern (PParens pat) = "(" ++ prettyPattern pat ++ ")"
 
 prettyPatternAtom :: Pattern -> String
 prettyPatternAtom p@(PVar _) = prettyPattern p
-prettyPatternAtom p@(PLinearVar _) = prettyPattern p
+prettyPatternAtom p@(PBorrow _) = prettyPattern p
 prettyPatternAtom p@PWildcard = prettyPattern p
 prettyPatternAtom p@(PInt _) = prettyPattern p
 prettyPatternAtom p@(PFloat _) = prettyPattern p

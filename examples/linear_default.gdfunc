@@ -1,0 +1,62 @@
+module LinearDefaultExample exposing (main)
+
+-- Example demonstrating linear-by-default behavior
+-- All user-defined types are linear unless marked as shared
+
+-- A linear type (default) - must be used exactly once
+type Stack a = Stack (List a)
+
+-- Linear type for file handle
+type FileHandle = FileHandle String
+
+-- Push consumes the stack and returns a new one
+push : a -> Stack a -> Stack a
+push item stack =
+    case stack of
+        Stack items -> Stack (item :: items)
+
+-- Pop consumes the stack and returns (maybe item, new stack)
+pop : Stack a -> (Maybe a, Stack a)
+pop stack =
+    case stack of
+        Stack [] -> (Nothing, Stack [])
+        Stack (x :: xs) -> (Just x, Stack xs)
+
+-- Borrowing to check if empty (doesn't consume)
+isEmpty : &Stack a -> Bool
+isEmpty stack =
+    case stack of
+        Stack [] -> True
+        Stack _ -> False
+
+-- Example: safe file handling
+readFile : FileHandle -> (String, FileHandle)
+readFile handle =
+    case handle of
+        FileHandle path -> ("contents of " ++ path, handle)
+
+closeFile : FileHandle -> ()
+closeFile handle =
+    case handle of
+        FileHandle _ -> ()
+
+-- Safe pattern: file handle must be consumed (closed)
+processFile : String -> String
+processFile path =
+    let handle = FileHandle path
+        (content, handle2) = readFile handle
+        _ = closeFile handle2
+    in content
+
+-- Main example
+main : Int
+main =
+    let stack1 = Stack [1, 2, 3]
+        empty = isEmpty &stack1         -- borrow to check
+        stack2 = push 4 stack1          -- consume and get new stack
+        (item, stack3) = pop stack2     -- consume and get new stack
+        (item2, stack4) = pop stack3
+        final = case item2 of
+            Just x -> x
+            Nothing -> 0
+    in final

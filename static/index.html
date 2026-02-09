@@ -1,0 +1,89 @@
+<!-- static/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GDFunc Compiler Playground</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 GDFunc Compiler Playground</h1>
+            <p>A functional language with linear types</p>
+        </header>
+
+        <div class="controls">
+            <button id="compileBtn" class="btn btn-primary">Compile to C</button>
+            <button id="runCBtn" class="btn btn-warning">Compile C and Run</button>
+            <button id="runBtn" class="btn btn-success">Compile Both and Run</button>
+            <button id="clearBtn" class="btn btn-secondary">Clear All</button>
+        </div>
+
+        <div class="editor-grid">
+            <!-- GDFunc Source Editor -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>📝 GDFunc Source</h3>
+                    <div class="example-selector">
+                        <label for="exampleSelect">Load Example:</label>
+                        <select id="exampleSelect">
+                            <option value="">-- Select an example --</option>
+                        </select>
+                    </div>
+                </div>
+                <textarea id="sourceEditor" class="code-editor" spellcheck="false" placeholder="Select an example from the dropdown above, or write your own GDFunc code here..."></textarea>
+            </div>
+
+            <!-- Generated C Code -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>⚙️ Generated C Code</h3>
+                </div>
+                <textarea id="cCodeOutput" class="code-editor" spellcheck="false">// C code will appear here...</textarea>
+            </div>
+
+            <!-- Compiler Output -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>🔧 Compiler Output</h3>
+                </div>
+                <div id="compilerOutput" class="output-area">
+                    <div class="output-section">
+                        <strong>Scanner:</strong> <span id="scanOutput">-</span>
+                    </div>
+                    <div class="output-section">
+                        <strong>Parser:</strong> <span id="parseOutput">-</span>
+                    </div>
+                    <div class="output-section">
+                        <strong>Type Checker:</strong> <span id="typeCheckOutput">-</span>
+                    </div>
+                    <div class="output-section error" id="errorOutput" style="display: none;">
+                        <strong>Error:</strong> <span id="errorMessage"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Program Output -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>📤 Program Output (stdin/stdout)</h3>
+                </div>
+                <div class="output-area">
+                    <div class="output-section">
+                        <strong>stdout:</strong>
+                        <pre id="stdoutOutput">-</pre>
+                    </div>
+                    <div class="output-section error">
+                        <strong>stderr:</strong>
+                        <pre id="stderrOutput">-</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

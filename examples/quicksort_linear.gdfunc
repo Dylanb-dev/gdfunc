@@ -1,0 +1,87 @@
+module LinearQuicksort exposing (quicksort, partition, concat3)
+
+-- Linear quicksort using the new linear-by-default semantics
+-- Lists are linear by default (must be used exactly once)
+
+-- Quicksort: consumes input list, returns new sorted list
+quicksort : List Int -> List Int
+quicksort list =
+    case list of
+        [] ->
+            []
+
+        pivot :: rest ->
+            let
+                (smaller, larger) = partition pivot rest
+                sortedSmaller = quicksort smaller
+                sortedLarger = quicksort larger
+            in
+            concat3 sortedSmaller pivot sortedLarger
+
+-- Partition: consumes input list, returns two new lists
+partition : Int -> List Int -> (List Int, List Int)
+partition pivot list =
+    case list of
+        [] ->
+            ([], [])
+
+        x :: xs ->
+            let
+                (smalls, bigs) = partition pivot xs
+            in
+            if x <= pivot then
+                (x :: smalls, bigs)
+            else
+                (smalls, x :: bigs)
+
+-- Concatenate three lists
+concat3 : List Int -> Int -> List Int -> List Int
+concat3 left pivot right =
+    let
+        withPivot = pivot :: right
+        result = appendLinear left withPivot
+    in
+    result
+
+-- Linear append: consumes both input lists
+appendLinear : List Int -> List Int -> List Int
+appendLinear xs ys =
+    case xs of
+        [] ->
+            ys
+
+        x :: rest ->
+            let
+                tail = appendLinear rest ys
+            in
+            x :: tail
+
+-- Check length without consuming (borrowing)
+length : &List a -> Int
+length list =
+    case list of
+        [] -> 0
+        _ :: rest -> 1 + length &rest
+
+-- Example usage
+sortExample : List Int -> List Int
+sortExample list =
+    let
+        -- Can check length without consuming (borrowing)
+        len = length &list
+        -- Now consume the list to sort it
+        sorted = quicksort list
+    in
+    sorted
+
+-- This would be a TYPE ERROR (can't use list twice):
+-- badExample list =
+--     let
+--         sorted1 = quicksort list
+--         sorted2 = quicksort list  -- ERROR: list already consumed
+--     in
+--     sorted1
+
+-- This would be a TYPE ERROR (list not consumed):
+-- wasteExample list =
+--     []  -- ERROR: list must be used

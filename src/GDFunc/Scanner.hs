@@ -48,7 +48,9 @@ data TokenType
     
     -- Linear-specific keywords
     | LINEAR_ARROW     -- -o
-    
+    | SHARED           -- shared keyword
+    | AMPERSAND        -- & for borrowing
+
     -- Literals
     | IDENTIFIER String
     | LINEAR_IDENT String  -- identifier!
@@ -192,7 +194,7 @@ scanToken = do
         '&' -> do
             match '&' >>= \case
                 True -> addToken AND
-                False -> throwError "Unexpected character: &"
+                False -> addToken AMPERSAND
         ':' -> do
             match ':' >>= \case
                 True -> addToken CONS
@@ -292,6 +294,7 @@ keywords =
     , ("let", LET)
     , ("in", IN)
     , ("where", WHERE)
+    , ("shared", SHARED)
     ]
 
 -- Scan a string literal

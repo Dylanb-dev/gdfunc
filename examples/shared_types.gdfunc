@@ -1,0 +1,58 @@
+module SharedTypesExample exposing (main)
+
+-- Example demonstrating shared types
+-- Shared types can be used multiple times without borrowing
+
+-- A shared type for configuration
+type shared Config = Config
+    { host : String
+    , port : Int
+    , debug : Bool
+    }
+
+-- A shared type for coordinates
+type shared Point = Point Float Float
+
+-- Function that uses config multiple times (no borrowing needed)
+processWithConfig : Config -> String -> String
+processWithConfig config data =
+    let url = makeUrl config
+        logged = if config.debug then
+                    "Processing: " ++ data
+                 else
+                    ""
+        result = sendRequest config url data
+    in result
+
+-- Helper functions
+makeUrl : Config -> String
+makeUrl config =
+    config.host ++ ":" ++ show config.port
+
+sendRequest : Config -> String -> String -> String
+sendRequest config url data =
+    "Request to " ++ url ++ " with " ++ data
+
+-- Shared Point can be used multiple times
+distance : Point -> Point -> Float
+distance p1 p2 =
+    let dx = getX p1 - getX p2
+        dy = getY p1 - getY p2
+        dist = sqrt (dx * dx + dy * dy)
+    in dist
+
+getX : Point -> Float
+getX point =
+    case point of
+        Point x y -> x
+
+getY : Point -> Float
+getY point =
+    case point of
+        Point x y -> y
+
+main : String
+main =
+    let config = Config { host = "localhost", port = 8080, debug = True }
+        result = processWithConfig config "test data"
+    in result

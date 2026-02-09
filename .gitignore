@@ -35,6 +35,7 @@ cabal.project.local~
 *.so
 *.dylib
 *.dll
+*.c
 
 # Testing
 .hspec-failures

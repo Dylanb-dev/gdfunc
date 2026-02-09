@@ -1,5 +1,5 @@
 {
-  description = "Development environment for Haskell";
+  description = "Development environment for Haskell and C compilation";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -20,8 +20,20 @@
           cabal-install
           haskell-language-server
           hlint
-          ormolu  # formatter
-          ghcid   # auto-recompiler
+          ormolu
+          ghcid
+        ];
+        
+        # Minimal C toolchain
+        cTools = with pkgs; [
+          gcc
+          gnumake
+        ];
+        
+        # C libraries needed by Haskell packages
+        cLibs = with pkgs; [
+          zlib        # Required by many Haskell packages
+          zlib.dev    # Development headers
         ];
         
         # Common development tools
@@ -34,14 +46,17 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          buildInputs = haskellTools ++ commonTools;
+          buildInputs = haskellTools ++ cTools ++ cLibs ++ commonTools;
           
           shellHook = ''
             echo "🚀 Development environment loaded!"
             echo ""
-            echo "Haskell tools:"
-            echo "  - GHC version: $(ghc --version)"
+            echo "Haskell:"
+            echo "  - GHC: $(ghc --version)"
             echo "  - Cabal: $(cabal --version | head -n1)"
+            echo ""
+            echo "C toolchain:"
+            echo "  - GCC: $(gcc --version | head -n1)"
             echo ""
           '';
         };
