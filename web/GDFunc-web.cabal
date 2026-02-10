@@ -1,0 +1,81 @@
+cabal-version:      3.0
+name:               GDFunc-web
+version:            0.1.0.0
+synopsis:           Web interface for GDFunc compiler
+description:
+    A web server that provides a REST API for compiling GDFunc code.
+    This allows browser-based interaction with the GDFunc compiler.
+homepage:           https://github.com/yourusername/GDFunc
+bug-reports:        https://github.com/yourusername/GDFunc/issues
+license:            BSD-3-Clause
+license-file:       ../LICENSE
+author:             Your Name
+maintainer:         your.email@example.com
+copyright:          2024 Your Name
+category:           Web
+extra-source-files:
+    ../README.md
+    ../CHANGELOG.md
+
+common common-options
+    default-language: GHC2024
+    ghc-options:
+        -Wall
+        -Wcompat
+        -Widentities
+        -Wincomplete-uni-patterns
+        -Wincomplete-record-updates
+        -Wredundant-constraints
+        -Wnoncanonical-monad-instances
+        -Wmissing-export-lists
+        -Wpartial-fields
+        -Wmissing-deriving-strategies
+        -Wunused-packages
+        -fhide-source-paths
+
+    default-extensions:
+        LambdaCase
+        OverloadedStrings
+        RecordWildCards
+        DeriveGeneric
+
+    build-depends:
+        base
+
+library
+    import:           common-options
+    hs-source-dirs:   src
+    exposed-modules:
+        GDFunc.WebServer
+
+    build-depends:
+        GDFunc-compiler,
+        scotty >=0.20 && <0.23,
+        wai >=3.2 && <4,
+        wai-extra >=3.1 && <4,
+        wai-middleware-static >=0.9 && <1,
+        aeson >=1.5 && <3,
+        text >=1.2 && <3,
+        bytestring,
+        process,
+        temporary,
+        filepath,
+        transformers,
+        mtl,
+        containers,
+        directory,
+        http-types >=0.12 && <1
+
+executable gdfunc-web
+    import:           common-options
+    hs-source-dirs:   app
+    main-is:          WebServer.hs
+
+    build-depends:
+        GDFunc-web,
+        base
+
+    ghc-options:
+        -threaded
+        -rtsopts
+        -with-rtsopts=-N

@@ -264,7 +264,27 @@ moduleParser = do
 
 -- Parse declarations until EOF
 manyDecls :: Parser [Declaration]
-manyDecls = many (skipNewlines *> declaration <* skipNewlines)
+manyDecls = do
+    skipNewlines
+    tok <- peek
+    case fmap tokenType tok of
+        Just EOF -> return []
+        Nothing -> return []
+        Just _ -> do
+            -- Try to parse a declaration
+            st <- get
+            result <- catchError
+                (do decl <- declaration
+                    return (Just decl))
+                (\_ -> do
+                    put st
+                    return Nothing)
+            case result of
+                Nothing -> return []  -- No more declarations
+                Just decl -> do
+                    skipNewlines
+                    rest <- manyDecls
+                    return (decl : rest)
 
 modulePath :: Parser [String]
 modulePath = do
@@ -306,14 +326,15 @@ declaration :: Parser Declaration
 declaration = try sharedTypeAliasDeclaration
     <|> try typeAliasDeclaration
     <|> try sharedTypeDeclaration
-    <|> typeDeclaration
-    <|> annotationOrFunction
+    <|> try typeDeclaration
+    <|> try typeAnnotationDeclaration
+    <|> functionDeclaration
 
 typeDeclaration :: Parser Declaration
 typeDeclaration = do
     token TYPE
     name <- identifier
-    typeVars <- many identifier
+    typeVars <- many (try identifier)  -- Wrap identifier with try for backtracking
     token EQUALS
     constructors <- constructorList
     return $ TypeDecl name typeVars constructors
@@ -323,7 +344,7 @@ sharedTypeDeclaration = do
     token TYPE
     token SHARED
     name <- identifier
-    typeVars <- many identifier
+    typeVars <- many (try identifier)  -- Wrap identifier with try for backtracking
     token EQUALS
     constructors <- constructorList
     return $ SharedTypeDecl name typeVars constructors
@@ -347,7 +368,7 @@ typeAliasDeclaration = do
     token TYPE
     token ALIAS
     name <- identifier
-    typeVars <- many identifier
+    typeVars <- many (try identifier)  -- Wrap identifier with try for backtracking
     token EQUALS
     typ <- typeAnnotation
     return $ TypeAlias name typeVars typ
@@ -358,43 +379,45 @@ sharedTypeAliasDeclaration = do
     token SHARED
     token ALIAS
     name <- identifier
-    typeVars <- many identifier
+    typeVars <- many (try identifier)  -- Wrap identifier with try for backtracking
     token EQUALS
     typ <- typeAnnotation
     return $ SharedTypeAlias name typeVars typ
 
-functionAnnotation :: Parser Declaration
-functionAnnotation = do
-    name <- identifier
+-- Parse a standalone type annotation declaration
+typeAnnotationDeclaration :: Parser Declaration
+typeAnnotationDeclaration = do
+    name <- lowerIdentifier  -- Use lowercase identifier for functions
     token COLON
     typ <- typeAnnotation
     return $ TypeAnnotation name typ
 
+-- Parse a standalone function declaration (following Elm's approach)
 functionDeclaration :: Parser Declaration
 functionDeclaration = do
-    name <- identifier
-    patterns <- many pattern
-    token EQUALS
-    body <- expression
+    name <- lowerIdentifier
+    (patterns, body) <- parsePatternsAndBody []
     return $ FunctionDecl name patterns body
-
-annotationOrFunction :: Parser Declaration
-annotationOrFunction = do
-    name <- identifier
-    p <- peek
-    case fmap tokenType p of
-        -- Branch 1: It's a Type Annotation (factorial : Int -> Int)
-        Just COLON -> do
-            void $ token COLON
-            typ <- typeAnnotation
-            return $ TypeAnnotation name typ
-            
-        -- Branch 2: It's a Function Declaration (factorial n = ...)
-        _ -> do
-            patterns <- many pattern
-            void $ token EQUALS
-            body <- expression
-            return $ FunctionDecl name patterns body
+  where
+    -- Try to parse a pattern and recurse, OR parse equals and body
+    parsePatternsAndBody revPatterns = do
+        -- Save state before attempting
+        st <- get
+        -- Try to parse a pattern
+        result <- catchError
+            (do pat <- pattern
+                return (Just pat))
+            (\_ -> do
+                -- Pattern failed, restore state
+                put st
+                return Nothing)
+        case result of
+            Just pat -> parsePatternsAndBody (pat : revPatterns)
+            Nothing -> do
+                -- No more patterns, parse equals and body
+                token EQUALS
+                body <- expression
+                return (reverse revPatterns, body)
 
 -- Type Parser
 
@@ -436,13 +459,44 @@ typeApplication = do
                     innerType <- typeApplication
                     return (TShared innerType)
                 else do
-                    -- Normal type application
-                    atoms <- some typeAtom
-                    case atoms of
+                    -- Parse one atom, then collect more atoms carefully
+                    first <- typeAtom
+                    rest <- collectTypeAtoms []
+                    case first : rest of
                         [t] -> return t
                         (TCon name [] : args) -> return (TCon name args)
                         (TVar name : args) -> return (TCon name args)
                         _ -> throwError $ ParseError "Invalid type application" (Position 0 0)
+  where
+    -- Collect type atoms, stopping at tokens that end a type
+    collectTypeAtoms acc = do
+        tok <- peek
+        case fmap tokenType tok of
+            -- Stop at tokens that can't be part of a type application
+            Just ARROW -> return (reverse acc)
+            Just LINEAR_ARROW -> return (reverse acc)
+            Just EQUALS -> return (reverse acc)
+            Just PIPE -> return (reverse acc)
+            Just COMMA -> return (reverse acc)
+            Just RIGHT_PAREN -> return (reverse acc)
+            Just RIGHT_BRACE -> return (reverse acc)
+            Just RIGHT_BRACKET -> return (reverse acc)
+            Just COLON -> return (reverse acc)
+            Just NEWLINE -> return (reverse acc)
+            Just EOF -> return (reverse acc)
+            -- Try to parse another type atom
+            Just _ -> do
+                st <- get
+                result <- catchError
+                    (do atom <- typeAtom
+                        return (Just atom))
+                    (\_ -> do
+                        put st
+                        return Nothing)
+                case result of
+                    Just atom -> collectTypeAtoms (atom : acc)
+                    Nothing -> return (reverse acc)
+            Nothing -> return (reverse acc)
 
 typeAtom :: Parser Type
 typeAtom = typeVarOrCon
@@ -791,27 +845,36 @@ parensExpression = do
 -- Pattern Parser
 
 pattern :: Parser Pattern
-pattern = consPattern
+pattern = do
+    -- Check if we're at a token that could start a pattern
+    tok <- peek
+    case fmap tokenType tok of
+        Just EQUALS -> throwError $ ParseError "Cannot start pattern with =" (Position 0 0)
+        Just COLON -> throwError $ ParseError "Cannot start pattern with :" (Position 0 0)
+        Just ARROW -> throwError $ ParseError "Cannot start pattern with ->" (Position 0 0)
+        _ -> consPattern
 
 consPattern :: Parser Pattern
 consPattern = do
     left <- patternAtom
-    rest <- optional $ do
-        token CONS
-        consPattern
-    case rest of
-        Nothing -> return left
-        Just right -> return $ PCons left right
+    -- Check if next token is CONS before trying to parse it
+    isCons <- check CONS
+    if isCons
+        then do
+            token CONS
+            right <- consPattern
+            return $ PCons left right
+        else return left
 
 patternAtom :: Parser Pattern
-patternAtom = borrowPattern
-    <|> wildcardPattern
-    <|> literalPattern
+patternAtom = try borrowPattern
+    <|> try wildcardPattern
+    <|> try literalPattern
     <|> try constructorPattern  -- Try constructor before variable (both use identifiers)
-    <|> variablePattern
-    <|> listPattern
-    <|> tuplePattern
-    <|> parensPattern
+    <|> try variablePattern
+    <|> try listPattern
+    <|> try tuplePattern
+    <|> try parensPattern
 
 borrowPattern :: Parser Pattern
 borrowPattern = do

@@ -67,61 +67,60 @@ spec = do
                     Right (TArrow _ (TArrow _ _)) -> True `shouldBe` True
                     _ -> expectationFailure "Failed to parse right-associative function type"
 
-        -- TODO: Fix these parseModule tests - they're currently failing due to parser issues
-        -- describe "parseModule" $ do
-        --     it "parses a module with ML type annotations and function bodies" $ do
-        --         let source = unlines
-        --                 [ "module Factorial exposing (main)"
-        --                 , ""
-        --                 , "factorial : Int -> Int"
-        --                 , "factorial n = 1"
-        --                 ]
-        --         let tokens = either (const []) id $ scanTokens source
-        --         let filteredTokens = filter (not . isSkippable . tokenType) tokens
-        --         case parseModule filteredTokens of
-        --             Right (Module _ _ _ decls) -> do
-        --                 -- Factorial should now result in TWO declarations
-        --                 length decls `shouldBe` 2
-        --
-        --                 -- Check for the Annotation
-        --                 any (\case
-        --                     TypeAnnotation "factorial" _ -> True
-        --                     _ -> False) decls `shouldBe` True
-        --
-        --                 -- Check for the Function Body
-        --                 any (\case
-        --                     FunctionDecl "factorial" _ _ -> True
-        --                     _ -> False) decls `shouldBe` True
-        --
-        --             Left err -> expectationFailure $ "Parse error: " ++ show err
-        --
-        --     it "parses full factorial logic with recursion" $ do
-        --         let source = unlines
-        --                 [ "module Factorial exposing (factorial)"
-        --                 , ""
-        --                 , "factorial : Int -> Int"
-        --                 , "factorial n ="
-        --                 , "    if n <= 1 then 1 else n * factorial (n - 1)"
-        --                 ]
-        --         let tokens = either (const []) id $ scanTokens source
-        --         let filteredTokens = filter (not . isSkippable . tokenType) tokens
-        --         case parseModule filteredTokens of
-        --             Right (Module _ _ _ decls) -> do
-        --                 -- 1 Annotation + 1 Function Body
-        --                 length decls `shouldBe` 2
-        --             Left err -> expectationFailure $ "Recursion parse failed: " ++ show err
-        --
-        --     it "parses type aliases" $ do
-        --         let source = unlines
-        --                 [ "module Types exposing (..)"
-        --                 , ""
-        --                 , "type alias Name = String"
-        --                 ]
-        --         let tokens = either (const []) id $ scanTokens source
-        --         let filtered = filter (not . isSkippable . tokenType) tokens
-        --         case parseModule filtered of
-        --             Right (Module _ _ _ [TypeAlias "Name" [] _]) -> True `shouldBe` True
-        --             _ -> expectationFailure "Failed to parse TypeAlias"
+        describe "parseModule" $ do
+            it "parses a module with ML type annotations and function bodies" $ do
+                let source = unlines
+                        [ "module Factorial exposing (main)"
+                        , ""
+                        , "factorial : Int -> Int"
+                        , "factorial n = 1"
+                        ]
+                let tokens = either (const []) id $ scanTokens source
+                let filteredTokens = filter (not . isSkippable . tokenType) tokens
+                case parseModule filteredTokens of
+                    Right (Module _ _ _ decls) -> do
+                        -- Factorial should now result in TWO declarations
+                        length decls `shouldBe` 2
+
+                        -- Check for the Annotation
+                        any (\case
+                            TypeAnnotation "factorial" _ -> True
+                            _ -> False) decls `shouldBe` True
+
+                        -- Check for the Function Body
+                        any (\case
+                            FunctionDecl "factorial" _ _ -> True
+                            _ -> False) decls `shouldBe` True
+
+                    Left err -> expectationFailure $ "Parse error: " ++ show err
+
+            it "parses full factorial logic with recursion" $ do
+                let source = unlines
+                        [ "module Factorial exposing (factorial)"
+                        , ""
+                        , "factorial : Int -> Int"
+                        , "factorial n ="
+                        , "    if n <= 1 then 1 else n * factorial (n - 1)"
+                        ]
+                let tokens = either (const []) id $ scanTokens source
+                let filteredTokens = filter (not . isSkippable . tokenType) tokens
+                case parseModule filteredTokens of
+                    Right (Module _ _ _ decls) -> do
+                        -- 1 Annotation + 1 Function Body
+                        length decls `shouldBe` 2
+                    Left err -> expectationFailure $ "Recursion parse failed: " ++ show err
+
+            it "parses type aliases" $ do
+                let source = unlines
+                        [ "module Types exposing (..)"
+                        , ""
+                        , "type alias Name = String"
+                        ]
+                let tokens = either (const []) id $ scanTokens source
+                let filtered = filter (not . isSkippable . tokenType) tokens
+                case parseModule filtered of
+                    Right (Module _ _ _ [TypeAlias "Name" [] _]) -> True `shouldBe` True
+                    _ -> expectationFailure "Failed to parse TypeAlias"
 
         describe "Example Files" $ do
             -- TODO: Fix module-level function declaration parsing
@@ -249,5 +248,5 @@ declName (SharedTypeAlias name _ _) = name
 -- Helper to check if token should be skipped
 isSkippable :: TokenType -> Bool
 isSkippable (COMMENT _) = True
-isSkippable NEWLINE = True
+-- Keep NEWLINE tokens - the parser needs them for layout!
 isSkippable _ = False

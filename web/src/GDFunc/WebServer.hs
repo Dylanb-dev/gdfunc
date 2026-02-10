@@ -46,8 +46,8 @@ data ServerConfig = ServerConfig
 defaultConfig :: ServerConfig
 defaultConfig = ServerConfig
     { serverPort = 3000
-    , staticDir = "static"
-    , examplesDir = "examples"
+    , staticDir = "web/static"
+    , examplesDir = "compiler/examples"
     }
 
 -- API request/response types

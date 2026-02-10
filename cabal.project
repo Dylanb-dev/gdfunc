@@ -1,0 +1,28 @@
+packages:
+  compiler/
+  web/
+
+-- Common settings for all packages
+package *
+  optimization: True
+
+-- Compiler-specific settings
+package GDFunc-compiler
+  ghc-options: -Wall -Wcompat
+
+-- Web-specific settings (when enabled)
+package GDFunc-web
+  ghc-options: -Wall -Wcompat -threaded
+
+-- Allow newer base and template-haskell for dependencies that don't support GHC 9.14 yet
+allow-newer:
+  *:base,
+  *:template-haskell,
+  indexed-traversable-instances:base,
+  aeson:base,
+  aeson:template-haskell,
+  witherable:base
+
+-- Alternative: Use this to allow all newer versions (more permissive)
+-- This is simpler but less precise
+-- allow-newer: all
