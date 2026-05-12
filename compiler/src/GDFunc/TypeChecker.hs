@@ -5,6 +5,11 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 
+-- | Type checker for GDFunc.
+--
+-- The borrow-tracking state machine in this module will be rebuilt on
+-- top of 'GDFunc.TypeChecker.Borrow' (linear IO from @linear-base@)
+-- in phase 2 of the ecosystem refactor — see that module's haddock.
 module GDFunc.TypeChecker
     ( TypeError(..)
     , TypeEnv

@@ -108,6 +108,7 @@ data LetBinding
 data ParserState = ParserState
     { tokens :: [Token]
     , currentPos :: Int
+    , indentLevel :: Int  -- Current required indentation level
     } deriving (Show)
 
 data ParseError = ParseError
@@ -132,6 +133,7 @@ parseModule toks = evalState (runExceptT moduleParser) initialState
     initialState = ParserState
         { tokens = filter (not . isSkippable) toks
         , currentPos = 0
+        , indentLevel = 0
         }
     -- Only skip comments, keep newlines!
     isSkippable tok = case tokenType tok of
@@ -147,12 +149,49 @@ skipNewlines = do
             skipNewlines
         _ -> return ()
 
+-- Get the current column position
+getCurrentColumn :: Parser Int
+getCurrentColumn = do
+    tok <- peek
+    case tok of
+        Just t -> return $ column (position t)
+        Nothing -> return 0
+
+-- Skip newlines and check that we're properly indented
+skipNewlinesAndCheckIndent :: Parser ()
+skipNewlinesAndCheckIndent = do
+    skipNewlines
+    st <- get
+    tok <- peek
+    case tok of
+        Just t -> do
+            let col = column (position t)
+            let required = indentLevel st
+            when (col > 0 && col <= required) $
+                throwError $ ParseError
+                    ("Indentation error: expected indent > " ++ show required ++ ", got " ++ show col)
+                    (position t)
+        Nothing -> return ()
+
+-- Execute a parser with a new indentation level based on current position
+withIndent :: Parser a -> Parser a
+withIndent parser = do
+    col <- getCurrentColumn
+    st <- get
+    let oldIndent = indentLevel st
+    put st { indentLevel = col }
+    result <- parser
+    st' <- get
+    put st' { indentLevel = oldIndent }
+    return result
+
 parseExpr :: [Token] -> Either ParseError Expr
 parseExpr toks = evalState (runExceptT expression) initialState
   where
     initialState = ParserState
         { tokens = filter (not . isSkippable) toks
         , currentPos = 0
+        , indentLevel = 0
         }
     isSkippable tok = tokenType tok `elem` [NEWLINE, COMMENT ""]
 
@@ -162,6 +201,7 @@ parseType toks = evalState (runExceptT typeAnnotation) initialState
     initialState = ParserState
         { tokens = filter (not . isSkippable) toks
         , currentPos = 0
+        , indentLevel = 0
         }
     isSkippable tok = tokenType tok `elem` [NEWLINE, COMMENT ""]
 
@@ -416,6 +456,8 @@ functionDeclaration = do
             Nothing -> do
                 -- No more patterns, parse equals and body
                 token EQUALS
+                -- After =, skip newlines and allow indented body
+                skipNewlinesAndCheckIndent
                 body <- expression
                 return (reverse revPatterns, body)
 
@@ -593,8 +635,10 @@ ifExpression = do
     token IF
     condition <- expression
     token THEN
+    skipNewlinesAndCheckIndent
     thenBranch <- expression
     token ELSE
+    skipNewlinesAndCheckIndent
     elseBranch <- expression
     return $ EIf condition thenBranch elseBranch
 
@@ -604,6 +648,7 @@ caseExpression = do
         <|> (token CASE >> return False)
     scrutinee <- expression
     token OF
+    skipNewlinesAndCheckIndent
     branches <- many caseBranch
     return $ ECase isLinear scrutinee branches
 
@@ -611,6 +656,7 @@ caseBranch :: Parser (Pattern, Expr)
 caseBranch = do
     pat <- pattern
     token ARROW
+    skipNewlinesAndCheckIndent
     expr <- expression
     return (pat, expr)
 
@@ -619,6 +665,7 @@ letExpression = do
     token LET
     bindings <- many letBinding
     token IN
+    skipNewlinesAndCheckIndent
     body <- expression
     return $ ELet bindings body
 
@@ -639,6 +686,7 @@ letDefBinding = do
     name <- identifier
     patterns <- many pattern
     token EQUALS
+    skipNewlinesAndCheckIndent
     expr <- expression
     return $ LetDef name patterns expr
 
@@ -646,6 +694,7 @@ letDestructureBinding :: Parser LetBinding
 letDestructureBinding = do
     pat <- pattern
     token EQUALS
+    skipNewlinesAndCheckIndent
     expr <- expression
     return $ LetDestructure pat expr
 
@@ -654,6 +703,7 @@ lambdaExpression = do
     token BACKSLASH
     patterns <- some pattern
     token ARROW
+    skipNewlinesAndCheckIndent
     body <- expression
     return $ ELambda patterns body
 

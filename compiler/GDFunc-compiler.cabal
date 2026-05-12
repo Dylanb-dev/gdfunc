@@ -1,11 +1,12 @@
 cabal-version:      3.0
 name:               GDFunc-compiler
 version:            0.1.0.0
-synopsis:           Elm-like language with linear types for Godot VM - Compiler
+synopsis:           Elm-like functional language with linear types, compiles to GDScript and C
 description:
-    A functional programming language inspired by Elm that uses linear types
-    for resource management and safety. This package contains the core compiler:
-    scanner, parser, type checker, and code generator.
+    A functional programming language inspired by Elm with linear types
+    for resource safety. The compiler emits GDScript (for the Godot game
+    engine) and C. This package contains the scanner, parser, type
+    checker, and code generators.
 homepage:           https://github.com/yourusername/GDFunc
 bug-reports:        https://github.com/yourusername/GDFunc/issues
 license:            BSD-3-Clause
@@ -17,7 +18,7 @@ category:           Language
 extra-source-files:
     ../README.md
     ../CHANGELOG.md
-    ../examples/*.gdfunc
+    examples/*.gdfunc
 
 common common-options
     default-language: GHC2024
@@ -58,8 +59,12 @@ library
         GDFunc.Scanner
         GDFunc.Parser
         GDFunc.Pretty
+        GDFunc.SrcSpan
         GDFunc.TypeChecker
+        GDFunc.TypeChecker.Borrow
         GDFunc.CodeGen
+        GDFunc.CodeGen.C
+        GDFunc.CodeGen.GDScript
 
     build-depends:
         mtl >=2.2 && <3,
@@ -76,14 +81,9 @@ executable gdfunc
 
     build-depends:
         GDFunc-compiler,
-        mtl,
-        transformers,
-        text,
-        haskeline >=0.8 && <0.9,
+        optparse-applicative >=0.18 && <0.20,
         filepath >=1.4 && <1.6,
-        directory >=1.3 && <1.4,
-        linear-base >=0.6 && <0.7,
-        process
+        process >=1.6 && <1.7
 
     ghc-options:
         -threaded
@@ -100,6 +100,9 @@ test-suite GDFunc-compiler-test
         GDFunc.ParserSpec
         GDFunc.PrettySpec
         GDFunc.TypeCheckerSpec
+        GDFunc.CodeGenSpec
+        GDFunc.IntegrationSpec
+        GDFunc.GoldenSpec
 
     build-tool-depends: hspec-discover:hspec-discover
     build-depends:
@@ -108,8 +111,11 @@ test-suite GDFunc-compiler-test
         transformers,
         text,
         hspec >=2.7 && <3,
+        hspec-golden >=0.2 && <0.3,
         QuickCheck >=2.14 && <3,
         hspec-discover >=2.7 && <3,
+        directory >=1.3 && <1.4,
+        filepath >=1.4 && <1.6,
 
     ghc-options:
         -threaded
