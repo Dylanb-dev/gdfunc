@@ -3,6 +3,7 @@ module Main (main) where
 import qualified GDFunc.Scanner as Scanner
 import qualified GDFunc.Parser as Parser
 import qualified GDFunc.CodeGen as CodeGen
+import qualified GDFunc.TypeChecker.Borrow as Borrow
 
 import Options.Applicative
 import System.Exit (exitFailure)
@@ -85,7 +86,14 @@ runCompile o = do
         Right m  -> pure m
 
     if optCheckOnly o
-        then putStrLn "OK (parse only; type-checking pass is wired in phase 2)"
+        then do
+            report <- Borrow.borrowAnalyzeModule ast
+            putStrLn $ "Borrow analysis: opened="
+                    ++ show (Borrow.reportOpened report)
+                    ++ ", released="
+                    ++ show (Borrow.reportReleased report)
+                    ++ " (linear-IO discipline)"
+            putStrLn "OK"
         else do
             let target  = optTarget o
             let outPath = case optOutput o of

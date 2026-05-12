@@ -49,14 +49,25 @@ data Ur a where
 unUr :: Ur a -> a
 unUr (Ur x) = x
 
--- Type context with support for linear-by-default, borrowing, and shared types
+-- Type context. Primitives (Int, Float, String, Bool, Char) are
+-- implicitly copyable per the language spec; every other type is
+-- linear by default. There is no user-facing "shared" keyword.
 data TypeContext = TypeContext
     { ctxBindings :: Map String P.Type
     , ctxLinearVars :: Set String      -- Variables that are linear (default)
     , ctxBorrowedVars :: Set String    -- Variables that are borrowed (&var)
-    , ctxSharedTypes :: Set String     -- Type names that are shared
     , ctxUsageCount :: Map String Int
     } deriving (Show)
+
+-- | The set of primitive type names that are implicitly copyable.
+copyablePrimitives :: Set String
+copyablePrimitives = Set.fromList ["Int", "Float", "String", "Bool", "Char"]
+
+-- | A type is copyable iff it is one of the primitives.
+isCopyableType :: P.Type -> Bool
+isCopyableType (P.TCon name _) = Set.member name copyablePrimitives
+isCopyableType (P.TBorrowed _) = True  -- borrows can be reborrowed freely
+isCopyableType _               = False
 
 -- Simplified type environment
 data LinTypeEnv = LinTypeEnv
@@ -64,31 +75,36 @@ data LinTypeEnv = LinTypeEnv
     , envFreshCounter :: Int
     } deriving (Show)
 
--- | Create an empty linear type environment
--- Basic types are shared by default: Int, Float, String, Bool, Char
+-- | Create an empty linear type environment. Primitives are
+-- implicitly copyable (Int, Float, String, Bool, Char) — no spec
+-- "shared" wrapper.
 emptyLinEnv :: LinTypeEnv
 emptyLinEnv = LinTypeEnv
     { envContext = TypeContext
         { ctxBindings = Map.fromList
-            [ ("+", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Int" []))))
-            , ("-", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Int" []))))
-            , ("*", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Int" []))))
-            , ("/", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Int" []))))
-            , ("<=", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Bool" []))))
-            , (">=", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Bool" []))))
-            , ("<", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Bool" []))))
-            , (">", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Bool" []))))
-            , ("==", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Bool" []))))
-            , ("True", P.TShared (P.TCon "Bool" []))
-            , ("False", P.TShared (P.TCon "Bool" []))
+            [ ("+",  intBinop)
+            , ("-",  intBinop)
+            , ("*",  intBinop)
+            , ("/",  intBinop)
+            , ("<=", intCompareOp)
+            , (">=", intCompareOp)
+            , ("<",  intCompareOp)
+            , (">",  intCompareOp)
+            , ("==", intCompareOp)
+            , ("True",  P.TCon "Bool" [])
+            , ("False", P.TCon "Bool" [])
             ]
-        , ctxLinearVars = Set.empty
+        , ctxLinearVars   = Set.empty
         , ctxBorrowedVars = Set.empty
-        , ctxSharedTypes = Set.fromList ["Int", "Float", "String", "Bool", "Char"]
-        , ctxUsageCount = Map.empty
+        , ctxUsageCount   = Map.empty
         }
     , envFreshCounter = 0
     }
+  where
+    int  = P.TCon "Int"  []
+    bool = P.TCon "Bool" []
+    intBinop     = P.TArrow int  (P.TArrow int int)
+    intCompareOp = P.TArrow int  (P.TArrow int bool)
 
 -- Type errors
 data TypeError
@@ -150,18 +166,10 @@ markBorrowed name = LinTypeCheck (\(LinTypeEnv ctx counter) ->
     let newCtx = ctx { ctxBorrowedVars = Set.insert name (ctxBorrowedVars ctx) }
     in Right ((), LinTypeEnv newCtx counter))
 
-markSharedType :: String -> LinTypeCheck ()
-markSharedType typeName = LinTypeCheck (\(LinTypeEnv ctx counter) ->
-    let newCtx = ctx { ctxSharedTypes = Set.insert typeName (ctxSharedTypes ctx) }
-    in Right ((), LinTypeEnv newCtx counter))
-
-isTypeShared :: P.Type -> LinTypeCheck Bool
-isTypeShared (P.TShared _) = return True
-isTypeShared (P.TCon name _) = LinTypeCheck (\env ->
-    let shared = Set.member name (ctxSharedTypes (envContext env))
-    in Right (shared, env))
-isTypeShared (P.TBorrowed _) = return False
-isTypeShared _ = return False
+-- | A type is copyable (per spec, only primitives) iff
+-- 'isCopyableType' says so. Lifted into 'LinTypeCheck' for convenience.
+isTypeCopyable :: P.Type -> LinTypeCheck Bool
+isTypeCopyable = pure . isCopyableType
 
 isVarBorrowed :: String -> LinTypeCheck Bool
 isVarBorrowed name = LinTypeCheck (\env ->
@@ -226,13 +234,13 @@ consumeLinearFile (LinearFile path) = path
 
 inferExpr :: P.Expr -> LinTypeCheck P.Type
 inferExpr (P.EVar name) = do
-    -- Check if the variable is borrowed or shared
+    -- Check if the variable is borrowed or has a copyable primitive type
     borrowed <- isVarBorrowed name
     varType <- lookupVar name
-    isShared <- isTypeShared varType
+    copyable <- isTypeCopyable varType
 
-    -- Only track usage for linear variables (not borrowed or shared)
-    if not borrowed && not isShared
+    -- Only track usage for linear variables (not borrowed or copyable)
+    if not borrowed && not copyable
         then markUsed name
         else return ()
 
@@ -243,11 +251,11 @@ inferExpr (P.EBorrow expr) = do
     exprType <- inferExpr expr
     return (P.TBorrowed exprType)
 
--- Basic types are shared by default
-inferExpr (P.EInt _) = return (P.TShared (P.TCon "Int" []))
-inferExpr (P.EFloat _) = return (P.TShared (P.TCon "Float" []))
-inferExpr (P.EChar _) = return (P.TShared (P.TCon "Char" []))
-inferExpr (P.EString _) = return (P.TShared (P.TCon "String" []))
+-- Primitive literals are implicitly copyable (per language spec).
+inferExpr (P.EInt _)    = return (P.TCon "Int"    [])
+inferExpr (P.EFloat _)  = return (P.TCon "Float"  [])
+inferExpr (P.EChar _)   = return (P.TCon "Char"   [])
+inferExpr (P.EString _) = return (P.TCon "String" [])
 
 inferExpr (P.EList []) = do
     tv <- freshTyVar
@@ -303,7 +311,7 @@ inferExpr (P.EIf cond thenE elseE) = do
     elseType <- inferExpr elseE
     return thenType
 
-inferExpr (P.ECase isLinear scrutinee branches) = do
+inferExpr (P.ECase scrutinee branches) = do
     scrutineeType <- inferExpr scrutinee
     branchTypes <- mapM (checkBranch scrutineeType) branches
     case branchTypes of
@@ -369,11 +377,11 @@ inferPattern P.PWildcard = do
     tv <- freshTyVar
     return (tv, [])
 
--- Basic type patterns are shared
-inferPattern (P.PInt _) = return (P.TShared (P.TCon "Int" []), [])
-inferPattern (P.PFloat _) = return (P.TShared (P.TCon "Float" []), [])
-inferPattern (P.PChar _) = return (P.TShared (P.TCon "Char" []), [])
-inferPattern (P.PString _) = return (P.TShared (P.TCon "String" []), [])
+-- Primitive patterns are implicitly copyable.
+inferPattern (P.PInt _)    = return (P.TCon "Int"    [], [])
+inferPattern (P.PFloat _)  = return (P.TCon "Float"  [], [])
+inferPattern (P.PChar _)   = return (P.TCon "Char"   [], [])
+inferPattern (P.PString _) = return (P.TCon "String" [], [])
 
 inferPattern (P.PCons p1 p2) = do
     (t1, bindings1) <- inferPattern p1
@@ -427,11 +435,11 @@ processLetBinding (P.LetDef name patterns expr) = do
 processLetBinding (P.LetDestructure pattern expr) = do
     (patType, bindings) <- inferPattern pattern
     exprType <- inferExpr expr
-    -- Add bindings and mark as linear only if the type is not shared
+    -- Add bindings and mark as linear only if the type isn't copyable
     mapM_ (\(name, typ) -> do
         extendEnv name typ
-        isShared <- isTypeShared exprType
-        if not isShared then markLinear name else return ()
+        copyable <- isTypeCopyable exprType
+        if not copyable then markLinear name else return ()
         ) bindings
 
 checkBranch :: P.Type -> (P.Pattern, P.Expr) -> LinTypeCheck P.Type
@@ -466,22 +474,12 @@ typeCheckModule (P.Module _ _ _ decls) =
 checkDecl :: P.Declaration -> LinTypeCheck ()
 checkDecl (P.TypeAnnotation name typ) = extendEnv name typ
 
-checkDecl (P.TypeDecl name typeVars constructors) = do
-    -- Regular type declarations are linear by default
+checkDecl (P.TypeDecl _name _typeVars _constructors) =
+    -- User-defined types are linear by default (per spec); no flag to record.
     return ()
 
-checkDecl (P.SharedTypeDecl name typeVars constructors) = do
-    -- Mark this type as shared
-    markSharedType name
-    return ()
-
-checkDecl (P.TypeAlias name typeVars typ) = do
-    -- Type aliases inherit the linearity of their underlying type
-    return ()
-
-checkDecl (P.SharedTypeAlias name typeVars typ) = do
-    -- Mark this type alias as shared
-    markSharedType name
+checkDecl (P.TypeAlias _name _typeVars _typ) =
+    -- Aliases inherit the underlying type's linearity.
     return ()
 
 checkDecl (P.FunctionDecl name patterns expr) = do
@@ -532,15 +530,18 @@ emptyEnv = TypeEnv Map.empty Set.empty Map.empty
 builtinEnv :: TypeEnv
 builtinEnv = TypeEnv
     { typeBindings = Map.fromList
-        [ ("+", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Int" []))))
-        , ("-", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Int" []))))
-        , ("*", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Int" []))))
-        , ("/", P.TArrow (P.TShared (P.TCon "Int" [])) (P.TArrow (P.TShared (P.TCon "Int" [])) (P.TShared (P.TCon "Int" []))))
+        [ ("+",  intBinop)
+        , ("-",  intBinop)
+        , ("*",  intBinop)
+        , ("/",  intBinop)
         , ("++", P.TArrow (P.TCon "List" [P.TVar "a"]) (P.TArrow (P.TCon "List" [P.TVar "a"]) (P.TCon "List" [P.TVar "a"])))
         , ("::", P.TArrow (P.TVar "a") (P.TArrow (P.TCon "List" [P.TVar "a"]) (P.TCon "List" [P.TVar "a"])))
-        , ("True", P.TShared (P.TCon "Bool" []))
-        , ("False", P.TShared (P.TCon "Bool" []))
+        , ("True",  P.TCon "Bool" [])
+        , ("False", P.TCon "Bool" [])
         ]
     , linearVars = Set.empty
-    , usedVars = Map.empty
+    , usedVars  = Map.empty
     }
+  where
+    int = P.TCon "Int" []
+    intBinop = P.TArrow int (P.TArrow int int)

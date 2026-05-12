@@ -19,7 +19,7 @@ You write Elm-flavored source with linear types and borrowing. The compiler type
 - **Elm-like syntax** — clean, functional, indentation-sensitive
 - **Linear types by default** — values must be used exactly once
 - **Borrowing** — explicit `&` for non-consuming references
-- **Shared types** — opt-in `shared` keyword for freely-copyable types
+- **Primitives are implicitly copyable** — `Int`, `Float`, `String`, `Bool`, `Char` need no special syntax
 - **Hindley–Milner type inference** with linear checking
 - **Pattern matching** with linear-consumption tracking
 
@@ -107,19 +107,6 @@ main =
         len = length &myList
         sum = sumList myList            -- myList still available afterwards
     in len + sum
-```
-
-### Shared types — freely copyable
-
-```elm
-type shared Config = Config
-    { host : String
-    , port : Int
-    }
-
-useConfig : Config -> String
-useConfig config =
-    config.host ++ ":" ++ String.fromInt config.port
 ```
 
 ### Linear types — the default

@@ -103,6 +103,7 @@ test-suite GDFunc-compiler-test
         GDFunc.CodeGenSpec
         GDFunc.IntegrationSpec
         GDFunc.GoldenSpec
+        GDFunc.BorrowSpec
 
     build-tool-depends: hspec-discover:hspec-discover
     build-depends:

@@ -21,9 +21,3 @@ spec = do
 
         it "pretty prints borrowed types" $ do
             prettyType (TBorrowed (TCon "List" [TVar "a"])) `shouldBe` "&(List a)"
-
-        it "pretty prints shared types" $ do
-            prettyType (TShared (TCon "Int" [])) `shouldBe` "shared Int"
-        
-        it "pretty prints linear arrows" $ do
-            prettyType (TLinearArrow (TVar "a") (TVar "b")) `shouldBe` "a -o b"

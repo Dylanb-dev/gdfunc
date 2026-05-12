@@ -43,18 +43,14 @@ data Declaration
     = TypeAnnotation String Type
     | FunctionDecl String [Pattern] Expr
     | TypeDecl String [String] [(String, [Type])]  -- type Name vars = Constructor types | ...
-    | SharedTypeDecl String [String] [(String, [Type])]  -- type shared Name vars = ...
     | TypeAlias String [String] Type
-    | SharedTypeAlias String [String] Type  -- type shared alias Name = ...
     deriving (Show, Eq)
 
 data Type
     = TVar String              -- a, b, comparable
     | TBorrowed Type           -- &Type (borrowed/non-consuming)
-    | TShared Type             -- shared Type (can be freely copied)
     | TCon String [Type]       -- List a, Maybe Int
     | TArrow Type Type         -- a -> b
-    | TLinearArrow Type Type   -- a -o b
     | TTuple [Type]            -- (a, b, c)
     | TRecord [(String, Type)] (Maybe String)  -- { x : Int } or { r | x : Int }
     deriving (Show, Eq)
@@ -71,7 +67,7 @@ data Expr
     | ERecord [(String, Expr)]
     | ERecordUpdate String [(String, Expr)]
     | EIf Expr Expr Expr
-    | ECase Bool Expr [(Pattern, Expr)]  -- Bool is True for case!
+    | ECase Expr [(Pattern, Expr)]
     | ELet [LetBinding] Expr
     | ELambda [Pattern] Expr
     | EApp Expr Expr           -- function application
@@ -254,15 +250,6 @@ lowerIdentifier = do
         IDENTIFIER name -> return name
         _ -> throwError $ ParseError "Expected lowercase identifier" (position tok)
 
-linearIdentifier :: Parser String
-linearIdentifier = do
-    tok <- satisfy $ \case
-        LINEAR_IDENT _ -> True
-        _ -> False
-    case tokenType tok of
-        LINEAR_IDENT name -> return name
-        _ -> throwError $ ParseError "Expected linear identifier" (position tok)
-
 peek :: Parser (Maybe Token)
 peek = do
     st <- get
@@ -363,9 +350,7 @@ importDecl = do
 -- Declaration Parser
 
 declaration :: Parser Declaration
-declaration = try sharedTypeAliasDeclaration
-    <|> try typeAliasDeclaration
-    <|> try sharedTypeDeclaration
+declaration = try typeAliasDeclaration
     <|> try typeDeclaration
     <|> try typeAnnotationDeclaration
     <|> functionDeclaration
@@ -378,16 +363,6 @@ typeDeclaration = do
     token EQUALS
     constructors <- constructorList
     return $ TypeDecl name typeVars constructors
-
-sharedTypeDeclaration :: Parser Declaration
-sharedTypeDeclaration = do
-    token TYPE
-    token SHARED
-    name <- identifier
-    typeVars <- many (try identifier)  -- Wrap identifier with try for backtracking
-    token EQUALS
-    constructors <- constructorList
-    return $ SharedTypeDecl name typeVars constructors
 
 constructorList :: Parser [(String, [Type])]
 constructorList = do
@@ -412,17 +387,6 @@ typeAliasDeclaration = do
     token EQUALS
     typ <- typeAnnotation
     return $ TypeAlias name typeVars typ
-
-sharedTypeAliasDeclaration :: Parser Declaration
-sharedTypeAliasDeclaration = do
-    token TYPE
-    token SHARED
-    token ALIAS
-    name <- identifier
-    typeVars <- many (try identifier)  -- Wrap identifier with try for backtracking
-    token EQUALS
-    typ <- typeAnnotation
-    return $ SharedTypeAlias name typeVars typ
 
 -- Parse a standalone type annotation declaration
 typeAnnotationDeclaration :: Parser Declaration
@@ -466,7 +430,8 @@ functionDeclaration = do
 typeAnnotation :: Parser Type
 typeAnnotation = typeArrow
 
--- Handles 'a -> b' and 'a -o b' (Right Associative)
+-- Handles 'a -> b' (Right Associative). The arrow is consuming/linear
+-- by default per the spec — there is no separate linear-arrow form.
 typeArrow :: Parser Type
 typeArrow = do
     left <- typeApplication
@@ -476,13 +441,9 @@ typeArrow = do
             void $ token ARROW
             right <- typeArrow
             return $ TArrow left right
-        Just LINEAR_ARROW -> do
-            void $ token LINEAR_ARROW
-            right <- typeArrow
-            return $ TLinearArrow left right
         _ -> return left
 
--- Handles 'List Int' or 'Maybe (List a)' or '&List Int' or 'shared List Int'
+-- Handles 'List Int' or 'Maybe (List a)' or '&List Int'
 typeApplication :: Parser Type
 typeApplication = do
     -- Check for & prefix (borrowed)
@@ -493,22 +454,14 @@ typeApplication = do
             innerType <- typeApplication
             return (TBorrowed innerType)
         else do
-            -- Check for shared prefix
-            isShared <- check SHARED
-            if isShared
-                then do
-                    token SHARED
-                    innerType <- typeApplication
-                    return (TShared innerType)
-                else do
-                    -- Parse one atom, then collect more atoms carefully
-                    first <- typeAtom
-                    rest <- collectTypeAtoms []
-                    case first : rest of
-                        [t] -> return t
-                        (TCon name [] : args) -> return (TCon name args)
-                        (TVar name : args) -> return (TCon name args)
-                        _ -> throwError $ ParseError "Invalid type application" (Position 0 0)
+            -- Parse one atom, then collect more atoms carefully
+            first <- typeAtom
+            rest <- collectTypeAtoms []
+            case first : rest of
+                [t] -> return t
+                (TCon name [] : args) -> return (TCon name args)
+                (TVar name : args) -> return (TCon name args)
+                _ -> throwError $ ParseError "Invalid type application" (Position 0 0)
   where
     -- Collect type atoms, stopping at tokens that end a type
     collectTypeAtoms acc = do
@@ -516,7 +469,6 @@ typeApplication = do
         case fmap tokenType tok of
             -- Stop at tokens that can't be part of a type application
             Just ARROW -> return (reverse acc)
-            Just LINEAR_ARROW -> return (reverse acc)
             Just EQUALS -> return (reverse acc)
             Just PIPE -> return (reverse acc)
             Just COMMA -> return (reverse acc)
@@ -644,13 +596,12 @@ ifExpression = do
 
 caseExpression :: Parser Expr
 caseExpression = do
-    isLinear <- (token CASE_LINEAR >> return True)
-        <|> (token CASE >> return False)
+    token CASE
     scrutinee <- expression
     token OF
     skipNewlinesAndCheckIndent
     branches <- many caseBranch
-    return $ ECase isLinear scrutinee branches
+    return $ ECase scrutinee branches
 
 caseBranch :: Parser (Pattern, Expr)
 caseBranch = do
@@ -778,7 +729,6 @@ applicationExpression = do
             _ -> accessExpression
         
     isIdentifierToken (IDENTIFIER _) = True
-    isIdentifierToken (LINEAR_IDENT _) = True
     isIdentifierToken _ = False
 
 accessExpression :: Parser Expr

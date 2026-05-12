@@ -1,7 +1,7 @@
 module LinearDefaultExample exposing (main)
 
 -- Example demonstrating linear-by-default behavior
--- All user-defined types are linear unless marked as shared
+-- Every user-defined type is linear; primitives are implicitly copyable
 
 -- A linear type (default) - must be used exactly once
 type Stack a = Stack (List a)

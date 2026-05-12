@@ -46,29 +46,17 @@ prettyDeclaration (TypeDecl name vars ctors) =
   where
     prettyCtor (n, types) = n ++ " " ++ unwords (map prettyTypeAtom types)
 
-prettyDeclaration (SharedTypeDecl name vars ctors) =
-    "type shared " ++ name ++ " " ++ unwords vars ++ "\n" ++
-    indent ("= " ++ intercalate "\n| " (map prettyCtor ctors))
-  where
-    prettyCtor (n, types) = n ++ " " ++ unwords (map prettyTypeAtom types)
-
 prettyDeclaration (TypeAlias name vars typ) =
     "type alias " ++ name ++ " " ++ unwords vars ++ " =\n" ++
-    indent (prettyType typ)
-
-prettyDeclaration (SharedTypeAlias name vars typ) =
-    "type shared alias " ++ name ++ " " ++ unwords vars ++ " =\n" ++
     indent (prettyType typ)
 
 -- Pretty print a type
 prettyType :: Type -> String
 prettyType (TVar name) = name
 prettyType (TBorrowed typ) = "&" ++ prettyTypeAtom typ
-prettyType (TShared typ) = "shared " ++ prettyTypeAtom typ
 prettyType (TCon name []) = name
 prettyType (TCon name args) = name ++ " " ++ unwords (map prettyTypeAtom args)
 prettyType (TArrow left right) = prettyTypeAtom left ++ " -> " ++ prettyType right
-prettyType (TLinearArrow left right) = prettyTypeAtom left ++ " -o " ++ prettyType right
 prettyType (TTuple types) = "(" ++ intercalate ", " (map prettyType types) ++ ")"
 prettyType (TRecord fields Nothing) =
     "{ " ++ intercalate ", " (map prettyField fields) ++ " }"
@@ -109,8 +97,8 @@ prettyExpr (EIf cond thenE elseE) =
     "else\n" ++
     indent (prettyExpr elseE)
 
-prettyExpr (ECase isLinear scrutinee branches) =
-    (if isLinear then "case! " else "case ") ++ prettyExpr scrutinee ++ " of\n" ++
+prettyExpr (ECase scrutinee branches) =
+    "case " ++ prettyExpr scrutinee ++ " of\n" ++
     indent (intercalate "\n\n" (map prettyBranch branches))
   where
     prettyBranch (pat, expr) =

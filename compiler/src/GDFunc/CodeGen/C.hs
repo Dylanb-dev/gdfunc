@@ -184,10 +184,6 @@ genDeclaration (TypeDecl name _vars _ctors) =
     emit $ "// type " ++ name ++ " = ..."
 genDeclaration (TypeAlias name _vars _typ) =
     emit $ "// type alias " ++ name ++ " = ..."
-genDeclaration (SharedTypeDecl name _vars _ctors) =
-    emit $ "// type shared " ++ name ++ " = ..."
-genDeclaration (SharedTypeAlias name _vars _typ) =
-    emit $ "// type shared alias " ++ name ++ " = ..."
 
 bindPattern :: Pattern -> Int -> CodeGen ()
 bindPattern (PVar varName) idx = do
@@ -284,7 +280,7 @@ genExpr (EBinOp op left right) = do
             _ -> "+"
     emit $ "    int " ++ resultVar ++ " = " ++ leftVar ++ " " ++ cOp ++ " " ++ rightVar ++ ";"
     return resultVar
-genExpr (ECase _isLinear _scrutinee _branches) = do
+genExpr (ECase _scrutinee _branches) = do
     resultVar <- freshVar "case_result"
     emit $ "    int " ++ resultVar ++ ";"
     emit "    // Case expression (simplified)"

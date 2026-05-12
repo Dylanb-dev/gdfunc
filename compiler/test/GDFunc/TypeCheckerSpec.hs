@@ -204,42 +204,42 @@ spec :: Spec
 spec = do
     describe "Type Inference (using fixtures)" $ do
         describe "Literals" $ do
-            it "infers shared Int type for integer literals" $
-                typeCheckFixture intLiteral `shouldBe` Right (P.TShared (P.TCon "Int" []))
+            it "infers Int type for integer literals" $
+                typeCheckFixture intLiteral `shouldBe` Right (P.TCon "Int" [])
 
-            it "infers shared Float type for float literals" $
-                typeCheckFixture floatLiteral `shouldBe` Right (P.TShared (P.TCon "Float" []))
+            it "infers Float type for float literals" $
+                typeCheckFixture floatLiteral `shouldBe` Right (P.TCon "Float" [])
 
-            it "infers shared Char type for character literals" $
-                typeCheckFixture charLiteral `shouldBe` Right (P.TShared (P.TCon "Char" []))
+            it "infers Char type for character literals" $
+                typeCheckFixture charLiteral `shouldBe` Right (P.TCon "Char" [])
 
-            it "infers shared String type for string literals" $
-                typeCheckFixture stringLiteral `shouldBe` Right (P.TShared (P.TCon "String" []))
-        
+            it "infers String type for string literals" $
+                typeCheckFixture stringLiteral `shouldBe` Right (P.TCon "String" [])
+
         describe "Lists" $ do
             it "infers List Int for integer list" $ do
                 let result = typeCheckFixture intList
                 result `shouldSatisfy` \case
-                    Right (P.TCon "List" [P.TShared (P.TCon "Int" [])]) -> True
+                    Right (P.TCon "List" [P.TCon "Int" []]) -> True
                     _ -> False
-            
+
             it "infers polymorphic list for empty list" $ do
                 let result = typeCheckFixture emptyList
                 result `shouldSatisfy` \case
                     Right (P.TCon "List" [P.TVar _]) -> True
                     _ -> False
-            
+
             it "infers nested list types" $ do
                 let result = typeCheckFixture nestedList
                 result `shouldSatisfy` \case
-                    Right (P.TCon "List" [P.TCon "List" [P.TShared (P.TCon "Int" [])]]) -> True
+                    Right (P.TCon "List" [P.TCon "List" [P.TCon "Int" []]]) -> True
                     _ -> False
-        
+
         describe "Tuples" $ do
             it "infers tuple types" $ do
                 let result = typeCheckFixture simpleTuple
                 result `shouldSatisfy` \case
-                    Right (P.TTuple [P.TShared (P.TCon "Int" []), P.TShared (P.TCon "String" [])]) -> True
+                    Right (P.TTuple [P.TCon "Int" [], P.TCon "String" []]) -> True
                     _ -> False
             
             it "infers nested tuple types" $ do

@@ -10,19 +10,18 @@
 4. [Syntax](#syntax)
 5. [Linear Semantics](#linear-semantics)
 6. [Borrowing](#borrowing)
-7. [Shared Types](#shared-types)
-8. [Pattern Matching](#pattern-matching)
-9. [Functions](#functions)
-10. [Control Flow](#control-flow)
-11. [Standard Library](#standard-library)
-12. [Examples](#examples)
-13. [Comparison with Other Languages](#comparison-with-other-languages)
+7. [Pattern Matching](#pattern-matching)
+8. [Functions](#functions)
+9. [Control Flow](#control-flow)
+10. [Standard Library](#standard-library)
+11. [Examples](#examples)
+12. [Comparison with Other Languages](#comparison-with-other-languages)
 
 ---
 
 ## Introduction
 
-GDFunc is a functional programming language with **linear types by default**. Every value must be used exactly once unless explicitly borrowed or marked as shared. This design provides:
+GDFunc is a functional programming language with **linear types by default**. Every value must be used exactly once unless explicitly borrowed. This design provides:
 
 - **Memory safety** without garbage collection
 - **Resource safety** (files, sockets, locks) at compile time
@@ -61,29 +60,16 @@ Use `&` to borrow a value without consuming it:
 -- This function borrows its argument (read-only access)
 length : &List a -> Int
 length list =
-    case list of
+    case &list of
         [] -> 0
-        _ :: rest -> 1 + length rest
+        _ :: rest -> 1 + length &rest
 
 -- After calling length, you can still use the list
 let len = length &myList
 let doubled = map (\x -> x * 2) myList  -- myList still available
 ```
 
-### 3. Opt-in Sharing
-
-Use `shared` for types that can be freely copied:
-
-```elm
--- Shared types can be used multiple times
-type shared Config = Config String Int
-
-useConfigTwice : &Config -> (String, Int)
-useConfigTwice config =
-    case config of
-        Config name value ->
-            (name ++ name, value + value)  -- 'name' and 'value' used twice
-```
+> **Borrow sites are always explicit.** Inside `length`, the parameter `list` is a `&List a`, but every *use* of it still carries a leading `&` — `&list`, `&rest`. The `&` is required everywhere a borrowed value appears in a use position. See [Borrowing](#borrowing) for the full rule.
 
 ---
 
@@ -91,19 +77,21 @@ useConfigTwice config =
 
 ### Basic Types
 
-All basic types are **shared by default** (can be freely copied):
+Primitive types are **implicitly copyable** — they do not follow linear rules and may be used any number of times without borrowing:
 
 ```elm
-Int      -- shared
-Float    -- shared
-String   -- shared
-Bool     -- shared
-Char     -- shared
+Int
+Float
+String
+Bool
+Char
 ```
+
+This is a built-in property of these types; there is no user-facing keyword to mark a type as copyable. Every user-defined type is linear.
 
 ### Linear Types
 
-User-defined types are **linear by default**:
+All user-defined types are **linear**:
 
 ```elm
 -- Linear type - must be consumed exactly once
@@ -120,38 +108,17 @@ type Result error value
     | Err error
 ```
 
-### Shared Types
-
-Mark types as `shared` to allow unrestricted use:
-
-```elm
--- This type can be copied freely
-type shared Point = Point Float Float
-
--- Shared types with parameters
-type shared Maybe a = Nothing | Just a
-
--- Shared record
-type shared User = User
-    { name : String
-    , age : Int
-    , email : String
-    }
-```
-
 ### Type Annotations
 
 ```elm
--- Linear type
+-- Linear type (the default for any user-defined type)
 x : List Int
 
 -- Borrowed type
 x : &List Int
 
--- Shared type
-x : shared List Int
--- OR (if List is declared as shared)
-x : List Int
+-- Primitive (implicitly copyable, no annotation needed)
+n : Int
 ```
 
 ---
@@ -167,17 +134,14 @@ module MyModule exposing (function1, Type1, function2)
 ### Type Declarations
 
 ```elm
--- Linear type (default)
+-- Linear type
 type Stack a = Stack (List a)
-
--- Shared type
-type shared Coordinate = Coordinate Int Int
 
 -- Type alias
 type alias Name = String
 
--- Shared type alias
-type shared alias Config = { host : String, port : Int }
+-- Record alias
+type alias Config = { host : String, port : Int }
 ```
 
 ### Function Declarations
@@ -192,7 +156,7 @@ push item stack =
 -- Function borrowing its argument
 isEmpty : &Stack a -> Bool
 isEmpty stack =
-    case stack of
+    case &stack of
         Stack [] -> True
         Stack _ -> False
 
@@ -201,7 +165,7 @@ map : (&a -> b) -> List a -> List b
 map f list =
     case list of
         [] -> []
-        x :: xs -> f x :: map f xs
+        x :: xs -> f &x :: map f xs
 ```
 
 ### Let Bindings
@@ -319,7 +283,7 @@ The `&` operator creates a **non-consuming reference** to a value:
 -- Function that borrows its argument
 printLength : &List a -> ()
 printLength list =
-    print (length list)
+    print (length &list)
 
 -- Usage
 let myList = [1, 2, 3]
@@ -327,12 +291,37 @@ let _ = printLength &myList  -- borrow myList
 let doubled = map (\x -> x * 2) myList  -- myList still available
 ```
 
+### Borrow Sites
+
+GDFunc requires `&` at **every use** of a borrowed value, not only at the point where ownership is converted to a borrow. This rule has no exceptions:
+
+- **At the call site of a function that takes `&T`**: write `&name` to borrow an owned value, OR `&name` to forward a borrow you already hold.
+- **Inside a function whose parameter was declared `&T`**: the parameter still requires `&name` at each use in the body.
+- **Inside pattern matches over a borrow**: `case &list of ...`, and any sub-pattern bindings extracted from a borrow are themselves borrows that require `&` at use sites.
+
+The reason for this rule is consistency for the reader: anywhere you see `&name` in source code, the value is being used as a borrow at that point. There is no second style where the borrow is implicit.
+
+```elm
+-- ✅ Correct: every use of `list` (a &List a) carries &
+length : &List a -> Int
+length list =
+    case &list of
+        [] -> 0
+        _ :: rest -> 1 + length &rest
+
+-- ❌ Incorrect: bare `list` inside the body
+length list =
+    case list of
+        [] -> 0
+        _ :: rest -> 1 + length rest
+```
+
 ### Borrowing Rules
 
-1. **Multiple borrows allowed**: You can borrow the same value multiple times
-2. **No mutation**: Borrowed values are read-only
-3. **Cannot consume borrowed values**: `&a` cannot be converted to `a`
-4. **Automatic dereferencing**: When pattern matching, borrows are transparent
+1. **Multiple borrows allowed**: You can borrow the same value multiple times.
+2. **No mutation**: Borrowed values are read-only.
+3. **Cannot consume borrowed values**: `&a` cannot be converted to `a`.
+4. **Borrows propagate through patterns**: Pattern-bound names extracted from a borrow are themselves borrows, and must be used with `&`.
 
 ```elm
 -- Multiple borrows are fine
@@ -343,12 +332,12 @@ let len3 = length &list
 -- Finally consume the list
 let result = sum list
 
--- Borrowed pattern matching
+-- Borrowed pattern matching — `&list` at the case site, `&` on each use of bound names
 head : &List a -> Maybe a
 head list =
-    case list of
+    case &list of
         [] -> Nothing
-        x :: _ -> Just x  -- x is copied (if shared) or borrowed
+        x :: _ -> Just &x
 ```
 
 ### When to Use Borrowing
@@ -364,76 +353,15 @@ Use borrowing when you need to:
 -- Good use of borrowing - configuration
 processWithConfig : &Config -> Data -> Result
 processWithConfig config data =
-    let validated = validate config data
-        transformed = transform config validated
-    in finalize config transformed
+    let validated = validate &config data
+        transformed = transform &config validated
+    in finalize &config transformed
 
 -- Good use of borrowing - query
 isEmpty : &List a -> Bool
 size : &List a -> Int
 contains : &a -> &List a -> Bool
 ```
-
----
-
-## Shared Types
-
-### Declaring Shared Types
-
-Types marked `shared` can be copied freely:
-
-```elm
-type shared Point = Point Float Float
-type shared Color = Red | Green | Blue
-type shared Config = Config { timeout : Int, retries : Int }
-```
-
-### Shared Semantics
-
-Shared values do **not** follow linear rules:
-
-```elm
--- Can use shared values multiple times
-let point = Point 3.0 4.0
-let x1 = getX point
-let x2 = getX point  -- point still available
-let dist = distance point origin  -- still available
-
--- Shared values in functions
-duplicate : shared a -> (a, a)
-duplicate x = (x, x)  -- x used twice - OK because shared
-```
-
-### When to Use Shared
-
-Use `shared` for:
-
-- **Primitive-like types** (Points, Colors, Coordinates)
-- **Configuration data** used throughout the program
-- **Small, immutable data** that's cheaper to copy than manage linearly
-- **Constants and enums**
-
-```elm
--- Good candidates for shared
-type shared HttpMethod = GET | POST | PUT | DELETE
-type shared Coordinate = Coordinate Int Int
-type shared RGB = RGB Int Int Int
-
--- Bad candidates for shared (should be linear)
-type FileHandle = FileHandle String  -- resource
-type Connection = Connection Socket  -- resource
-type LargeDataset = LargeDataset (Array Float)  -- expensive to copy
-```
-
-### Shared vs Linear Trade-offs
-
-| Aspect      | Linear                               | Shared                     |
-| ----------- | ------------------------------------ | -------------------------- |
-| Memory      | Single owner, no copying             | May copy frequently        |
-| Safety      | Prevents double-free, use-after-free | No ownership guarantees    |
-| Ergonomics  | Requires explicit threading          | Use anywhere freely        |
-| Resources   | Perfect for files, sockets, locks    | Cannot represent resources |
-| Performance | Zero-cost, predictable               | Potential copying overhead |
 
 ---
 
@@ -445,8 +373,8 @@ type LargeDataset = LargeDataset (Array Float)  -- expensive to copy
 -- Pattern matching consumes the matched value
 case list of
     [] -> 0
-    x :: xs -> 1 + length xs
--- 'list' is consumed by the case expression
+    x :: xs -> x + sum xs
+-- 'list' is consumed; `x` and `xs` are owned
 ```
 
 ### Pattern Matching with Borrowing
@@ -455,10 +383,10 @@ case list of
 -- Borrowing in pattern match
 peek : &List a -> Maybe a
 peek list =
-    case list of
+    case &list of
         [] -> Nothing
-        x :: _ -> Just x
--- 'list' is not consumed, but we get a copy/borrow of 'x'
+        x :: _ -> Just &x
+-- 'list' is not consumed; `x` is itself a borrow, so it appears as `&x`
 ```
 
 ### Nested Patterns
@@ -519,8 +447,8 @@ add : Int -> Int -> Int
 -- Mixed borrowing and consuming
 insertWithConfig : &Config -> a -> List a -> List a
 
--- Shared return type
-getConfig : FilePath -> shared Config
+-- Returning a fresh owned value
+getConfig : FilePath -> Config
 ```
 
 ### Function Definitions
@@ -556,8 +484,8 @@ safeDivide numerator denominator =
 -- Lambda consuming its argument
 \x -> x + 1
 
--- Lambda borrowing its argument
-\&x -> x * 2
+-- Lambda borrowing its argument (note: every use of `list` is &list)
+\&list -> length &list
 
 -- Multiple arguments
 \x y -> x + y
@@ -565,10 +493,10 @@ safeDivide numerator denominator =
 -- Pattern matching lambda
 \(x, y) -> x + y
 
--- Lambda with case
+-- Lambda with case (consuming form)
 \list -> case list of
     [] -> 0
-    _ :: rest -> 1 + length rest
+    _ :: rest -> 1 + countAll rest
 ```
 
 ### Higher-Order Functions
@@ -579,7 +507,7 @@ map : (&a -> b) -> List a -> List b
 map f list =
     case list of
         [] -> []
-        x :: xs -> f x :: map f xs
+        x :: xs -> f &x :: map f xs
 
 -- Function taking consuming function
 transform : (a -> b) -> List a -> List b
@@ -592,10 +520,10 @@ transform f list =
 add : Int -> (Int -> Int)
 add x = \y -> x + y
 
--- Closure over linear value
+-- Closure over a primitive value
 makeAdder : Int -> (Int -> Int)
 makeAdder x =
-    let addX = \y -> x + y  -- x is captured (must be shared)
+    let addX = \y -> x + y  -- x : Int is a primitive, captured by copy
     in addX
 ```
 
@@ -695,7 +623,7 @@ unzip : List (a, b) -> (List a, List b)
 ```elm
 module Maybe exposing (..)
 
-type shared Maybe a = Nothing | Just a
+type Maybe a = Nothing | Just a
 
 map : (&a -> b) -> Maybe a -> Maybe b
 withDefault : a -> Maybe a -> a
@@ -720,9 +648,9 @@ withDefault : a -> Result e a -> a
 ```elm
 module String exposing (..)
 
--- Strings are shared by default
+-- String is a primitive type, implicitly copyable
 
-length : String -> Int  -- Can use String multiple times
+length : String -> Int  -- String values are freely reusable
 append : String -> String -> String
 concat : List String -> String
 split : String -> String -> List String
@@ -777,7 +705,7 @@ sum list =
 -- Check if list is empty (borrowing)
 isEmpty : &List a -> Bool
 isEmpty list =
-    case list of
+    case &list of
         [] -> True
         _ -> False
 
@@ -1023,36 +951,37 @@ parseGreeting : Input -> ParseResult String
 parseGreeting = or parseHello parseWorld
 ```
 
-### Example 7: Shared Configuration
+### Example 7: Threading a Configuration
 
 ```elm
 module ConfigExample exposing (..)
 
-type shared Config = Config
+type Config = Config
     { apiKey : String
     , timeout : Int
     , retries : Int
     , debug : Bool
     }
 
--- Config is shared, so it can be borrowed everywhere
+-- Config is linear. Pass it as `&Config` to read from it.
 makeRequest : &Config -> String -> Result Error Response
 makeRequest config url =
-    if config.debug then
+    if (&config).debug then
         log ("Making request to " ++ url)
     else
         ()
-    -- ... make request with config.apiKey, config.timeout, etc
+    -- ... make request using (&config).apiKey, (&config).timeout, etc.
 
 processData : &Config -> Data -> Result Error ProcessedData
 processData config data =
-    if config.debug then
+    if (&config).debug then
         log "Processing data"
     else
         ()
-    -- ... process with config settings
+    -- ... process using fields of &config
 
--- Can use config multiple times without consuming it
+-- `main` owns the Config and lends it out for the duration of each call.
+-- The owner can borrow as many times as it likes without consuming.
 main : Config -> Result Error Response
 main config =
     let data = fetchData &config
@@ -1060,6 +989,8 @@ main config =
         result = saveResult &config processed
     in result
 ```
+
+> **Note:** field access on a borrow uses parentheses for clarity: `(&config).debug`. The `&` binds to the identifier, then `.debug` reads the field through the borrow.
 
 ---
 
@@ -1136,7 +1067,6 @@ doubled = map (\x -> x * 2) list  -- explicit consumption
 module -> "module" ModuleName "exposing" "(" exports ")"
 
 type -> "type" TypeName params "=" constructors
-      | "type" "shared" TypeName params "=" constructors
 
 function -> name ":" type
             name params "=" expr
@@ -1158,7 +1088,6 @@ pattern -> variable
 
 type_annotation -> type_name
                  | "&" type_annotation  -- borrowed
-                 | "shared" type_annotation
                  | type_annotation "->" type_annotation
                  | "(" type_annotation ")"
 ```

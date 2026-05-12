@@ -40,20 +40,16 @@ data TokenType
     | THEN
     | ELSE
     | CASE
-    | CASE_LINEAR      -- case!
     | OF
     | LET
     | IN
     | WHERE
     
     -- Linear-specific keywords
-    | LINEAR_ARROW     -- -o
-    | SHARED           -- shared keyword
     | AMPERSAND        -- & for borrowing
 
     -- Literals
     | IDENTIFIER String
-    | LINEAR_IDENT String  -- identifier!
     | NUMBER Int
     | FLOAT Double
     | STRING String
@@ -200,13 +196,11 @@ scanToken = do
                 True -> addToken CONS
                 False -> addToken COLON
         '-' -> do
-            match 'o' >>= \case
-                True -> addToken LINEAR_ARROW
-                False -> match '-' >>= \case
-                    True -> lineComment
-                    False -> match '>' >>= \case
-                        True -> addToken ARROW
-                        False -> addToken MINUS
+            match '-' >>= \case
+                True -> lineComment
+                False -> match '>' >>= \case
+                    True -> addToken ARROW
+                    False -> addToken MINUS
         '\\' -> addToken BACKSLASH
         '"' -> stringLiteral
         '\'' -> charLiteral
@@ -247,35 +241,13 @@ number = do
 identifier :: Scanner ()
 identifier = do
     advanceWhile (\c -> isAlphaNum c || c == '_' || c == '\'')
-    
+
     st <- get
     let text = take (current st - start st) (drop (start st) (source st))
-    
-    -- Special handling for "case" - check if followed by !
-    if text == "case"
-        then do
-            p <- peek
-            if p == Just '!'
-                then do
-                    advance  -- consume the !
-                    addTokenWithLiteral CASE_LINEAR
-                else addTokenWithLiteral CASE
-        else do
-            -- Check other keywords first
-            case lookup text keywords of
-                Just kw -> addTokenWithLiteral kw
-                Nothing -> do
-                    -- Not a keyword, check for linear identifier (ends with !)
-                    p <- peek
-                    hasLinear <- if p == Just '!'
-                        then do
-                            advance
-                            return True
-                        else return False
-                    
-                    if hasLinear
-                        then addTokenWithLiteral (LINEAR_IDENT text)
-                        else addTokenWithLiteral (IDENTIFIER text)
+
+    case lookup text keywords of
+        Just kw -> addTokenWithLiteral kw
+        Nothing -> addTokenWithLiteral (IDENTIFIER text)
 
 -- Keywords map
 keywords :: [(String, TokenType)]
@@ -294,7 +266,6 @@ keywords =
     , ("let", LET)
     , ("in", IN)
     , ("where", WHERE)
-    , ("shared", SHARED)
     ]
 
 -- Scan a string literal

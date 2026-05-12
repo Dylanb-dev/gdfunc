@@ -43,23 +43,11 @@ spec = do
                     Right (TBorrowed _) -> True `shouldBe` True
                     e -> expectationFailure ("Failed to parse borrowed type: " ++ show e)
 
-            it "parses shared types" $ do
-                let tokens = either (const []) id $ scanTokens "shared Int"
-                case parseType tokens of
-                    Right (TShared _) -> True `shouldBe` True
-                    e -> expectationFailure ("Failed to parse shared type: " ++ show e)
-            
             it "parses function types" $ do
                 let tokens = either (const []) id $ scanTokens "Int -> String"
                 case parseType tokens of
                     Right (TArrow _ _) -> True `shouldBe` True
                     _ -> expectationFailure "Failed to parse function type"
-
-            it "parses linear function types" $ do
-                let tokens = either (const []) id $ scanTokens "a -o b"
-                case parseType tokens of
-                    Right (TLinearArrow _ _) -> True `shouldBe` True
-                    _ -> expectationFailure "Failed to parse linear function type"
 
             it "parses complex nested function types" $ do
                 let tokens = either (const []) id $ scanTokens "Int -> Int -> Int"
@@ -122,7 +110,11 @@ spec = do
                     Right (Module _ _ _ [TypeAlias "Name" [] _]) -> True `shouldBe` True
                     _ -> expectationFailure "Failed to parse TypeAlias"
 
-        describe "Example Files" $ do
+        describe "Example Files" $
+            it "is pending parser fixes" $ pendingWith
+                "Example-file parser tests are disabled pending the megaparsec port; \
+                \the current parser fails on multi-line function bodies."
+
             -- TODO: Fix module-level function declaration parsing
             -- Parser improvements made: uppercase/lowercase distinction for constructors vs variables
             -- See Parser.hs: upperIdentifier, lowerIdentifier, updated constructorPattern and variablePattern
@@ -170,31 +162,8 @@ spec = do
             --                 _ -> False) decls `shouldBe` True
             --         Left err -> expectationFailure $ "Parse error: " ++ show err
 
-            it "parses shared_types.gdfunc" $ do
-                let source = unlines
-                        [ "module SharedTypesExample exposing (main)"
-                        , ""
-                        , "type shared Config = Config"
-                        , "    { host : String"
-                        , "    , port : Int"
-                        , "    }"
-                        , ""
-                        , "type shared Point = Point Float Float"
-                        ]
-                let tokens = either (const []) id $ scanTokens source
-                let filtered = filter (not . isSkippable . tokenType) tokens
-                case parseModule filtered of
-                    Right (Module ["SharedTypesExample"] _ _ decls) -> do
-                        -- Should have shared type declarations
-                        length decls `shouldSatisfy` (>= 2)
-                        -- Check for SharedTypeDecl
-                        any (\case
-                            SharedTypeDecl "Config" _ _ -> True
-                            _ -> False) decls `shouldBe` True
-                        any (\case
-                            SharedTypeDecl "Point" _ _ -> True
-                            _ -> False) decls `shouldBe` True
-                    Left err -> expectationFailure $ "Parse error: " ++ show err
+            -- (`shared` keyword removed per language spec — every user-defined
+            -- type is linear; primitives are implicitly copyable.)
 
             -- it "parses linear_default.gdfunc" $ do
             --     let source = unlines
@@ -243,8 +212,6 @@ declName (TypeAnnotation name _) = name
 declName (FunctionDecl name _ _) = name
 declName (TypeDecl name _ _)    = name
 declName (TypeAlias name _ _)   = name
-declName (SharedTypeDecl name _ _) = name
-declName (SharedTypeAlias name _ _) = name
 -- Helper to check if token should be skipped
 isSkippable :: TokenType -> Bool
 isSkippable (COMMENT _) = True

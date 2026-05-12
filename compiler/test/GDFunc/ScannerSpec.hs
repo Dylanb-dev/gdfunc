@@ -24,26 +24,17 @@ spec = do
                           ] -> True
                     _ -> False
 
-            it "scans shared keyword" $ do
-                let result = scanTokens "shared Int"
-                result `shouldSatisfy` \case
-                    Right [ Token SHARED _ _
-                          , Token (IDENTIFIER "Int") _ _
-                          , Token EOF _ _
-                          ] -> True
-                    _ -> False
-            
             it "scans numbers (integers and floats)" $ do
                 let result = scanTokens "42 3.14 5 1"
                 result `shouldSatisfy` \case
                     Right tokens -> length tokens == 5
                     Left _ -> False
-            
+
             it "scans operators and punctuation" $ do
-                -- Combined existing ops with Factorial symbols: : <= = ( )
-                let result = scanTokens "+ - * / -> -o : <= = ( )"
+                -- Spec-permitted ops: + - * / -> : <= = ( )   (no linear arrow -o)
+                let result = scanTokens "+ - * / -> : <= = ( )"
                 result `shouldSatisfy` \case
-                    Right tokens -> length tokens == 12
+                    Right tokens -> length tokens == 11
                     Left _ -> False
             
             it "scans strings" $ do
@@ -52,11 +43,10 @@ spec = do
                     Right [Token (STRING s) _ _, Token EOF _ _] -> s == "hello world"
                     _ -> False
             
-            it "handles keywords and case variants" $ do
-                let result = scanTokens "case case! if then else module exposing"
+            it "handles keywords" $ do
+                let result = scanTokens "case if then else module exposing"
                 result `shouldSatisfy` \case
                     Right [ Token CASE _ _
-                          , Token CASE_LINEAR _ _
                           , Token IF _ _
                           , Token THEN _ _
                           , Token ELSE _ _
@@ -79,11 +69,7 @@ spec = do
                           ] -> True
                     _ -> False
 
-            it "distinguishes case from case!" $ do
-                let result = scanTokens "case case!"
-                result `shouldSatisfy` \case
-                    Right [Token CASE _ _, Token CASE_LINEAR _ _, Token EOF _ _] -> True
-                    _ -> False
+            -- `case!` was removed per spec — there's only one case form.
 
         describe "Example Files" $ do
             it "scans factorial.gdfunc" $ do
@@ -127,25 +113,8 @@ spec = do
                     Right tokens -> length tokens > 40  -- Should have many tokens
                     Left _ -> False
 
-            it "scans shared_types.gdfunc" $ do
-                let source = unlines
-                        [ "module SharedTypesExample exposing (main)"
-                        , ""
-                        , "type shared Config = Config"
-                        , "    { host : String"
-                        , "    , port : Int"
-                        , "    }"
-                        , ""
-                        , "type shared Point = Point Float Float"
-                        ]
-                let result = scanTokens source
-                result `shouldSatisfy` \case
-                    Right tokens ->
-                        -- Check for presence of SHARED keyword
-                        any (\t -> case tokenType t of
-                            SHARED -> True
-                            _ -> False) tokens
-                    Left _ -> False
+            -- The `shared` keyword was removed per spec; the example file
+            -- and corresponding scanner test were deleted.
 
             it "scans linear_default.gdfunc" $ do
                 let source = unlines
