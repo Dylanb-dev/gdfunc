@@ -13,8 +13,7 @@ module GDFunc.GoldenSpec (spec) where
 import Test.Hspec
 import Test.Hspec.Golden (defaultGolden)
 
-import qualified GDFunc.Scanner as Scanner
-import qualified GDFunc.Parser as Parser
+import qualified GDFunc.Parser2 as Parser
 import qualified GDFunc.CodeGen as CodeGen
 
 spec :: Spec
@@ -27,22 +26,13 @@ spec = describe "Codegen golden output" $ do
     it "factorial.gdfunc -> GDScript" $
         defaultGolden "factorial-gdscript" gdOutput
 
--- | Run the pipeline and return whatever it produces, capturing scan
--- or parse errors as the golden output. We deliberately /don't/
--- throw: the first run pins current behavior, and subsequent runs
--- fail loudly when codegen, scanner, or parser change.
+-- | Run the pipeline and return whatever it produces, capturing
+-- parse errors as the golden output. We deliberately /don't/ throw:
+-- the first run pins current behavior; subsequent runs fail loudly
+-- when codegen or parser output drifts.
 runPipeline :: CodeGen.Target -> FilePath -> IO String
 runPipeline target path = do
     source <- readFile path
-    case Scanner.scanTokens source of
-        Left err -> pure $ "SCAN_ERROR: " ++ err
-        Right tokens ->
-            let filtered = filter (not . isSkippable . Scanner.tokenType) tokens
-            in case Parser.parseModule filtered of
-                Left err -> pure $ "PARSE_ERROR: " ++ show err
-                Right m  -> pure $ CodeGen.generate target m
-
-isSkippable :: Scanner.TokenType -> Bool
-isSkippable (Scanner.COMMENT _) = True
-isSkippable Scanner.NEWLINE     = True
-isSkippable _                   = False
+    case Parser.parseModule path source of
+        Left err -> pure $ "PARSE_ERROR:\n" ++ err
+        Right m  -> pure $ CodeGen.generate target m

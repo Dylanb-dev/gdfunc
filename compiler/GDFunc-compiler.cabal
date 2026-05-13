@@ -58,6 +58,8 @@ library
     exposed-modules:
         GDFunc.Scanner
         GDFunc.Parser
+        GDFunc.Parser2
+        GDFunc.Parser2.Stream
         GDFunc.Pretty
         GDFunc.SrcSpan
         GDFunc.TypeChecker
@@ -72,7 +74,9 @@ library
         text >=1.2 && <3,
         containers >=0.6 && <0.8,
         array >=0.5 && <0.6,
-        linear-base >=0.6 && <0.7
+        linear-base >=0.6 && <0.7,
+        megaparsec >=9.5 && <10,
+        parser-combinators >=1.3 && <2
 
 executable gdfunc
     import:           common-options
@@ -104,6 +108,7 @@ test-suite GDFunc-compiler-test
         GDFunc.IntegrationSpec
         GDFunc.GoldenSpec
         GDFunc.BorrowSpec
+        GDFunc.Parser2Spec
 
     build-tool-depends: hspec-discover:hspec-discover
     build-depends:

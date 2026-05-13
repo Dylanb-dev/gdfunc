@@ -1,7 +1,6 @@
 module Main (main) where
 
-import qualified GDFunc.Scanner as Scanner
-import qualified GDFunc.Parser as Parser
+import qualified GDFunc.Parser2 as Parser
 import qualified GDFunc.CodeGen as CodeGen
 import qualified GDFunc.TypeChecker.Borrow as Borrow
 
@@ -76,13 +75,8 @@ runCompile o = do
     let inFile = optInputFile o
     source <- readFile inFile
 
-    tokens <- case Scanner.scanTokens source of
-        Left err -> die ("Scan error: " ++ err)
-        Right ts -> pure ts
-
-    let filtered = filter (not . isSkippable . Scanner.tokenType) tokens
-    ast <- case Parser.parseModule filtered of
-        Left err -> die ("Parse error: " ++ show err)
+    ast <- case Parser.parseModule inFile source of
+        Left err -> die ("Parse error:\n" ++ err)
         Right m  -> pure m
 
     if optCheckOnly o
@@ -111,8 +105,3 @@ die :: String -> IO a
 die msg = do
     hPutStrLn stderr msg
     exitFailure
-
-isSkippable :: Scanner.TokenType -> Bool
-isSkippable (Scanner.COMMENT _) = True
-isSkippable Scanner.NEWLINE     = True
-isSkippable _                   = False

@@ -1,1 +1,0 @@
-PARSE_ERROR: ParseError {errorMessage = "Unexpected token: EQUALS", errorPosition = Position {line = 4, column = 14}}

@@ -18,14 +18,14 @@ import Control.Monad (when)
 data Position = Position
     { line :: Int
     , column :: Int
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Ord)
 
 -- Token with position information
 data Token = Token
     { tokenType :: TokenType
     , lexeme :: String
     , position :: Position
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Ord)
 
 -- All token types in GDFunc
 data TokenType
@@ -98,8 +98,7 @@ data TokenType
     | DEDENT Int
     | EOF
     | COMMENT String
-    
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord)
 
 -- Scanner state
 data ScannerState = ScannerState
